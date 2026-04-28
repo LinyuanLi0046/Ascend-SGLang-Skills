@@ -69,10 +69,15 @@ Every full run should generate one primary output:
 General rules:
 
 - the final report is written in Chinese
+- the final report is delivered as Markdown
+- all human-facing section titles, table titles, column headers, notes, summaries, and follow-up items are written in Chinese
+- kernel names, operator names, code symbols, and file paths may remain in their original language
 - the final report is self-contained
 - the final report is centered on a kernel-to-code mapping table
 - the primary mapping table uses one row per kernel row
 - the primary mapping table is keyed by concrete kernel `row_id`
+- every required mapping table is rendered as a Markdown table inside the report
+- CSV may exist only as a preprocessing artifact or optional machine-readable attachment and must not replace the human-facing Markdown tables in the final report
 - no final synthesized JSON output is required
 
 The reusable machine-readable evidence layer remains the preprocessing artifacts above.
@@ -162,6 +167,7 @@ Fixed section title:
 - Chinese: `主 Kernel Row 到代码映射表`
 
 Do not use hotspot-only titles such as `Hot Kernel To Code Mapping` for this mandatory primary section.
+Do not replace this mandatory primary section with a CSV file or CSV-looking plain-text dump.
 
 Required columns:
 
@@ -223,6 +229,7 @@ Primary-table validity rules:
 - grouped summaries by kernel family, operator family, or coarse profiling evidence are allowed only as secondary overview sections
 - the primary mapping table must be joinable back to the sliced kernel csv by `row_id` without ambiguity
 - a report without the primary mapping table is invalid
+- a report where the mandatory primary mapping table is not rendered as a Markdown table is invalid
 - the primary mapping table has higher rendering priority than narrative analysis
 - user-highlighted hot regions must remain unfolded in the primary table
 

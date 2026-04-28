@@ -306,7 +306,12 @@ The final deliverable is one Markdown report:
 
 - recommended filename: `kernel_code_mapping_report_<case_name>.md`
 - report language: Chinese
+- report format: Markdown
+- all human-facing section titles, table titles, column headers, notes, summaries, and follow-up items must be written in Chinese
+- kernel names, operator names, code symbols, and file paths may remain in their original language
 - report center: kernel-to-code mapping table
+- every required mapping table must be rendered as a Markdown table inside the report
+- CSV may exist only as a preprocessing artifact or optional machine-readable attachment; it must never replace the human-facing Markdown tables in the final report
 
 At minimum, the report must include:
 
@@ -341,6 +346,8 @@ Rendering priority:
  - Always discover the primary raw profiling evidence under `profiling_root_path/ASCEND_PROFILER_OUTPUT/`.
  - Always locate and use both full raw files: `trace_view.json` and `kernel_details.csv`.
  - Always run all four preprocessing scripts in the fixed order before strict mapping.
+- Never deliver the final report in English or mixed English-dominant prose when Chinese is required.
+- Never deliver the final mapping tables as CSV instead of Markdown tables.
 - Never start strict code localization without the user's actual launch parameters.
 - Never align profiling to code by matching a single kernel or operator name alone.
 - Always reconstruct one token path step by step before strict mapping.

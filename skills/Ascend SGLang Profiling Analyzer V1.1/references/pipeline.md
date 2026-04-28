@@ -456,10 +456,13 @@ Input:
 Work:
 
 - render one Markdown report in Chinese
+- render all required mapping sections as Markdown tables inside that report
+- do not substitute CSV files or CSV-looking plain-text dumps for the human-facing mapping tables
 - ensure the primary table can be joined back to sliced kernel csv by `row_id`
 - ensure the report remains centered on the kernel-to-code table
 - preserve sections in this priority order when output pressure exists: primary mapping table, coverage summary, runtime subphase summary, then narrative analysis
 - treat a missing primary mapping table as a render failure rather than a valid shortened report
+- treat English-dominant final prose or non-Markdown-table primary output as a render failure
 - treat missing runtime-owner information as a render failure for speculative, overlap-heavy, or scheduler-driven runs
 - do not silently omit rows; unresolved rows must remain in the primary table or be declared in `Unresolved Rows`
 

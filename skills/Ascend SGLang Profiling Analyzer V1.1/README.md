@@ -105,6 +105,12 @@ If launch parameters are missing, the skill may still provide structure and tent
 
 The final deliverable is one Markdown report centered on a kernel-to-code mapping table.
 
+Human-facing output rules:
+
+- the final report is written in Chinese
+- required mapping tables are rendered as Markdown tables inside the report
+- CSV may remain as preprocessing evidence or optional machine-readable attachment, but it does not replace the final Markdown tables
+
 The primary table must:
 
 - use the fixed section title `Primary Kernel-to-Code Mapping Table`, or in Chinese `主 Kernel Row 到代码映射表`

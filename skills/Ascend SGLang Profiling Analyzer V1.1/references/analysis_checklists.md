@@ -110,8 +110,11 @@ Fail action:
 
 Check:
 
+- the final report is written in Chinese for all human-facing content
+- the final report is delivered as Markdown rather than CSV or plain-text table dump
 - the main mapping table uses one primary row per kernel
 - the main mapping table title is `Primary Kernel-to-Code Mapping Table` or `主 Kernel Row 到代码映射表`
+- the main mapping table is rendered as a Markdown table inside the report
 - each primary row has exactly one kernel `row_id`
 - the main mapping table is keyed by concrete kernel `row_id`
 - repeated kernel names such as multiple `GatherV2` or `Cast` rows remain expanded instead of merged by family name
@@ -127,6 +130,7 @@ Check:
 - each row includes last-layer-candidate status when output-head ambiguity exists nearby
 - the primary table can be joined back to the sliced kernel csv by `row_id` without ambiguity
 - the report is invalid if the primary mapping table is missing
+- the report is invalid if the primary mapping table is emitted only as CSV or CSV-like plain text
 - the primary mapping table was preserved even if narrative sections had to be shortened
 - hotspot-only titles such as `Hot Kernel To Code Mapping` are not used for the mandatory primary section
 
