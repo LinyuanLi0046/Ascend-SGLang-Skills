@@ -8,17 +8,15 @@
 | OpenCode | `opencode/` | `task(...)` 小写 | `prompt` | `.opencode/agent/` (项目级) |
 | Trae | `trae/` | `Task(...)` 大写 | `query` | 由 Trae UI 创建,本目录 `trae/agents/` 提供 4 份配置素材供复制粘贴 |
 
-> 三版的 **流程、脚本、参考文档、模板共 60 个文件完全一致**,只有 `SKILL.md` 与 `references/shared/agent_call_templates.md` 因调用语法不同而内容有别。
-
-> **上游老用户迁移提示**:此版本在原 Trae 单平台布局之外新增了三平台并列子目录,**旧的 `cp -r skills/sglang-npu-adapter ${TRAE_SKILLS_PATH}/` 安装命令已不再适用**,Trae 用户请改用 `cp -r skills/sglang-npu-adapter/trae/skills/sglang-npu-adapter ${TRAE_SKILLS_PATH}/`(向下钻两级)。详见下方"快速安装"。
+> 三版的 **流程、脚本、参考文档、模板完全一致**,只有 `SKILL.md` 与 `references/shared/agent_call_templates.md` 因调用语法不同而内容有别。
 
 ---
 
 ## 目录结构
 
 ```
-skills/sglang-npu-adapter/         # ← 本 skill 的根目录(对应上游 PR 提交的相对路径)
-├── README.md                      # 本文件
+skills/sglang-npu-adapter/         
+├── README.md                      
 │
 ├── claude-code/
 │   ├── skills/
@@ -69,8 +67,8 @@ cp -r "$SKILLS_REPO/skills/sglang-npu-adapter/claude-code/agents/." ~/.claude/ag
 启用后 Claude Code 会自动通过 frontmatter `description` 加载此 skill。子 agent 通过 `.claude/agents/<name>.md` 注册,主流程用 `Agent(subagent_type="<name>", prompt=...)` 调用。
 
 **触发方式**:
-- 自然语言:"适配 Qwen3 到 NPU"、"让 SGLang 跑 LLaMA-3 在 Ascend 上"
-- 显式调用:`/sglang-npu-adapter`(若 Claude Code 启用了 slash 触发)
+- 自然语言:"在SGLang仓中适配NPU版本的xxx模型"
+- 显式调用:`/sglang-npu-adapter`
 
 ### OpenCode
 
@@ -135,7 +133,7 @@ Trae 应识别到 `sglang-npu-adapter` skill 并开始执行 Step 0,需要时会
 
 ---
 
-## 使用流程(三平台一致)
+## 使用流程
 
 无论哪个平台,启用 skill 后流程相同:
 
@@ -151,7 +149,5 @@ Trae 应识别到 `sglang-npu-adapter` skill 并开始执行 Step 0,需要时会
 | 6.5 | 精度根因定位 + 修复 (可选) | 设置 `precision_suspect=true` 触发 precision-rca,自动做 HF NPU eager 金标准层级 diff + 二分定位首坏层 + 算子下钻 + native 替换让 drift 归零 + 出 fix.patch |
 | 7 | 生成中文教程 | `generate_report.py` |
 | 8 | 交接产物 | `check-step-complete.sh` 跑质量门禁 |
-
-**所有过程产物全部写到 `{WORKSPACE_DIR}/` 下**——这是硬性约束,绝不污染项目根目录。
 
 ---
