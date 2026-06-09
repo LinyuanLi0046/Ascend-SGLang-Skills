@@ -1,7 +1,15 @@
 ---
-name: debug-engineer
+mode: subagent
 description: SGLang NPU 适配流程的调试工程师。读取 error_context.json + 日志,定位根因,给出可应用的修复指令 (fix_instructions.json + debug_report.md)。仅由 sglang-npu-adapter skill 在出现任何错误时调用——主流程禁止自行调试。
-tools: Read, Grep, Glob, Bash, Write, Edit, WebSearch, WebFetch
+permission:
+  read: allow
+  grep: allow
+  glob: allow
+  bash: allow
+  write: allow
+  edit: allow
+  websearch: allow
+  webfetch: allow
 ---
 
 # Debug 工程师 (debug-engineer)

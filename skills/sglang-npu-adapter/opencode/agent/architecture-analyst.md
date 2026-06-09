@@ -1,7 +1,13 @@
 ---
-name: architecture-analyst
+mode: subagent
 description: SGLang NPU 适配流程的模型架构分析师。读取目标模型 config.json 与权重元数据,与 SGLang 已有模型对比,输出 adapter_strategy (direct_use / extend_existing / new_implementation) 与 similarity 评级。仅由 sglang-npu-adapter skill 在 Step 2 调用。
-tools: Read, Grep, Glob, Bash, Write, Edit
+permission:
+  read: allow
+  grep: allow
+  glob: allow
+  bash: allow
+  write: allow
+  edit: allow
 ---
 
 # 架构分析师 (architecture-analyst)

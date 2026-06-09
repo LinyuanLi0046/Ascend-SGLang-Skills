@@ -5,7 +5,7 @@
 | 平台 | 子目录 | 子 agent 调用工具 | prompt 参数名 | 子 agent 注册位置 |
 |------|--------|------------------|---------------|------------------|
 | Claude Code | `claude-code/` | `Agent(...)` | `prompt` | `.claude/agents/` (项目级) |
-| OpenCode | `opencode/` | `task(...)` 小写 | `prompt` | `.opencode/agent/` (项目级) |
+| OpenCode | `opencode/` | `task(...)` 小写 | `prompt` | `.opencode/agents/` (项目级) |
 | Trae | `trae/` | `Task(...)` 大写 | `query` | 由 Trae UI 创建,本目录 `trae/agents/` 提供 4 份配置素材供复制粘贴 |
 
 > 三版的 **流程、脚本、参考文档、模板完全一致**,只有 `SKILL.md` 与 `references/shared/agent_call_templates.md` 因调用语法不同而内容有别。
@@ -30,7 +30,7 @@ skills/sglang-npu-adapter/
 ├── opencode/
 │   ├── skills/
 │   │   └── sglang-npu-adapter/    # → 安装到目标项目的 .opencode/skills/
-│   └── agent/                     # → 安装到目标项目的 .opencode/agent/
+│   └── agents/                    # → 安装到目标项目的 .opencode/agents/
 │       ├── architecture-analyst.md
 │       ├── debug-engineer.md
 │       ├── test-validator.md
@@ -75,20 +75,20 @@ cp -r "$SKILLS_REPO/skills/sglang-npu-adapter/claude-code/agents/." ~/.claude/ag
 ```bash
 # 1. 项目级安装
 cp -r "$SKILLS_REPO/skills/sglang-npu-adapter/opencode/skills/sglang-npu-adapter" .opencode/skills/
-cp -r "$SKILLS_REPO/skills/sglang-npu-adapter/opencode/agent/." .opencode/agent/
+cp -r "$SKILLS_REPO/skills/sglang-npu-adapter/opencode/agent/." .opencode/agents/
 
 # 2. 或 用户级
 cp -r "$SKILLS_REPO/skills/sglang-npu-adapter/opencode/skills/sglang-npu-adapter" ~/.config/opencode/skills/
-cp -r "$SKILLS_REPO/skills/sglang-npu-adapter/opencode/agent/." ~/.config/opencode/agent/
+cp -r "$SKILLS_REPO/skills/sglang-npu-adapter/opencode/agent/." ~/.config/opencode/agents/
 ```
 
-OpenCode 的 subagent 通过 `.opencode/agent/<name>.md` 注册,主流程用 **小写** `task(subagent_type="<name>", prompt=...)` 调用——注意与 Claude Code 的 `Agent`、Trae 的 `Task` 都不同。
+**注意:安装后需要重启 OpenCode。**
 
 **触发方式**:在 OpenCode 会话中描述目标 → 模型识别 skill description 后自动启用。
 
 ### Trae
 
-Trae 的安装分两步:**装 skill 文件** + **在 Trae UI 里把 4 个子 agent 配出来**。Claude Code / OpenCode 是把 agent 定义文件丢到 `.claude/agents/` 或 `.opencode/agent/` 就生效,Trae 没有这种本地目录约定,需要走 UI 创建。
+Trae 的安装分两步:**装 skill 文件** + **在 Trae UI 里把 4 个子 agent 配出来**。Claude Code / OpenCode 是把 agent 定义文件丢到 `.claude/agents/` 或 `.opencode/agents/` 就生效,Trae 没有这种本地目录约定,需要走 UI 创建。
 
 #### Step 1 — 装 skill 文件
 

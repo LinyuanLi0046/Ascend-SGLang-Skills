@@ -55,7 +55,7 @@ description: 将新模型适配到 SGLang 框架以支持 NPU 设备。当用户
 | 验证工程师        | 测试验证    | Step 6                            | `test-validator`       | `{{SKILL_DIR}}/prompts/test_validator.md`          |
 | 精度 RCA 工程师   | 精度根因定位  | Step 6.5(precision_suspect=true 时) | `precision-rca`       | `{{SKILL_DIR}}/prompts/precision_rca.md`           |
 
-每个子 Agent 都通过 `.opencode/agent/<subagent_type>.md` 注册为 OpenCode 项目级 subagent。
+每个子 Agent 都通过 `.opencode/agents/<subagent_type>.md` 注册为 OpenCode 项目级 subagent。**注意:安装后需要重启 OpenCode。**
 
 **调用方式**:`task(subagent_type="<name>", prompt=<query>, description="...")`。Prompt 由 `build-agent-query.sh` 生成,注入了 P0 前置阅读 PREAMBLE。
 
