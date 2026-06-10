@@ -13,7 +13,7 @@ swr.cn-southwest-2.myhuaweicloud.com/base_image/dockerhub/lmsysorg/sglang:cann8.
 
 1. **Pull the image**:
    ```bash
-   docker pull swr.cn-southwest-2.myhuaweicloud.com/base_image/dockerhub/lmsysorg/sglang:cann8.5.0-a3-B131
+   docker pull swr.cn-southwest-2.myhuaweicloud.com/base_image/dockerhub/lmsysorg/sglang:main-cann9.0.0-a3
    ```
 
 2. **Launch container with NPU devices and mount local source code**:
@@ -39,9 +39,7 @@ swr.cn-southwest-2.myhuaweicloud.com/base_image/dockerhub/lmsysorg/sglang:cann8.
      --device=/dev/davinci{0..15}:/dev/davinci{0..15} \
      --device=/dev/davinci_manager:/dev/davinci_manager \
      --device=/dev/hisi_hdc:/dev/hisi_hdc \
-     --entrypoint sleep \
-     swr.cn-southwest-2.myhuaweicloud.com/base_image/dockerhub/lmsysorg/sglang:cann8.5.0-a3-B131 \
-     infinity
+     swr.cn-southwest-2.myhuaweicloud.com/base_image/dockerhub/lmsysorg/sglang:main-cann9.0.0-a3 
    ```
 
    Key flags explained:
