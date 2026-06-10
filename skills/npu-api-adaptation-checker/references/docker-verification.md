@@ -2,7 +2,7 @@
 
 Use the following Docker image for verification:
 ```
-swr.cn-southwest-2.myhuaweicloud.com/base_image/dockerhub/lmsysorg/sglang:cann8.5.0-a3-B131
+swr.cn-southwest-2.myhuaweicloud.com/base_image/dockerhub/lmsysorg/sglang:main-cann9.0.0-a3
 ```
 
 ## Prerequisites
