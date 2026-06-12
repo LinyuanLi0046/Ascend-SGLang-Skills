@@ -1,7 +1,13 @@
 ---
-name: test-validator
+mode: subagent
 description: SGLang NPU 适配流程的验证工程师。在 Step 5 两阶段验证已通过后,跑功能集测试 (ACLGraph / DeepEP / DP-Attention / MTP / 多模态 / 长上下文容量),输出 test_result.json + test_report.md。仅由 sglang-npu-adapter skill 在 Step 6 调用。
-tools: Read, Grep, Glob, Bash, Write, Edit
+permission:
+  read: allow
+  grep: allow
+  glob: allow
+  bash: allow
+  write: allow
+  edit: allow
 ---
 
 # 验证工程师 (test-validator)

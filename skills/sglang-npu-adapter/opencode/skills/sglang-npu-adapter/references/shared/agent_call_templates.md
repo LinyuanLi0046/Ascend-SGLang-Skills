@@ -19,7 +19,7 @@ task(
 )
 ```
 
-> 三平台对比:Claude Code 用 `Agent(... prompt=...)`,Trae 用 `Task(... query=...)`,**OpenCode 用小写 `task(... prompt=...)`**。OpenCode 的 subagent 定义放在 `.opencode/agent/<name>.md`(对照 Claude 的 `.claude/agents/`)。
+> 三平台对比:Claude Code 用 `Agent(... prompt=...)`,Trae 用 `Task(... query=...)`,**OpenCode 用小写 `task(... prompt=...)`**。OpenCode 的 subagent 定义放在 `.opencode/agents/<name>.md`(对照 Claude 的 `.claude/agents/`)。**注意:安装后需要重启 OpenCode。**
 
 `<agent_name>` 与 `<subagent-type>` 映射:
 

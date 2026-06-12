@@ -1,7 +1,13 @@
 ---
-name: precision-rca
+mode: subagent
 description: SGLang NPU 适配流程的精度根因定位 + 修复工程师。在用户/同事外部精度评测发现问题后 (precision_suspect=true) 触发,以 HF NPU eager 为金标准做层级 diff + 二分定位首坏层 + 算子下钻到首坏 op,优先用 native torch 替换让 drift 归零,出 fix.patch 与修复报告。算子仓 / NPU runtime bug 不修,降级 located_needs_human_fix 交人。
-tools: Read, Grep, Glob, Bash, Write, Edit
+permission:
+  read: allow
+  grep: allow
+  glob: allow
+  bash: allow
+  write: allow
+  edit: allow
 ---
 
 # 精度根因定位 + 修复工程师 (precision-rca)
