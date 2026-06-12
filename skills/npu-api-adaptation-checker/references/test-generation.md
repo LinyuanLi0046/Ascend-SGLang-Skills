@@ -28,6 +28,8 @@ Examples:
 
 ## Step 3: Test File Templates
 
+**Critical**: All generated tests MUST import model weight path constants from `sglang.test.ascend.test_ascend_utils` instead of hardcoding local paths like `/home/weights/...`. These constants resolve to the correct path depending on whether the test runs in CI or locally. See Step 4 for the mapping.
+
 ### Template A: Boolean Flag Parameter (e.g., `--enable-xxx`)
 
 ```python
@@ -36,6 +38,7 @@ import unittest
 import requests
 
 from sglang.srt.utils import kill_process_tree
+from sglang.test.ascend.test_ascend_utils import LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH
 from sglang.test.ci.ci_register import register_npu_ci
 from sglang.test.test_utils import (
     DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
@@ -58,7 +61,7 @@ class TestNpu<ParameterName>(CustomTestCase):
     [Test Target] --<parameter-name>
     """
 
-    model = "/home/weights/LLM-Research/Llama-3.2-1B-Instruct"
+    model = LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH
     base_url = DEFAULT_URL_FOR_TEST
 
     @classmethod
@@ -113,6 +116,7 @@ import unittest
 import requests
 
 from sglang.srt.utils import kill_process_tree
+from sglang.test.ascend.test_ascend_utils import LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH
 from sglang.test.ci.ci_register import register_npu_ci
 from sglang.test.test_utils import (
     DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
@@ -135,7 +139,7 @@ class TestNpu<ParameterName>(CustomTestCase):
     [Test Target] --<parameter-name>
     """
 
-    model = "/home/weights/LLM-Research/Llama-3.2-1B-Instruct"
+    model = LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH
     base_url = DEFAULT_URL_FOR_TEST
 
     @classmethod
@@ -191,6 +195,7 @@ import unittest
 import requests
 
 from sglang.srt.utils import kill_process_tree
+from sglang.test.ascend.test_ascend_utils import LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH
 from sglang.test.ci.ci_register import register_npu_ci
 from sglang.test.test_utils import (
     DEFAULT_TIMEOUT_FOR_SERVER_LAUNCH,
@@ -213,7 +218,7 @@ class TestNpu<ParameterName>(CustomTestCase):
     [Test Target] --<parameter-name>
     """
 
-    model = "/home/weights/LLM-Research/Llama-3.2-1B-Instruct"
+    model = LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH
     base_url = DEFAULT_URL_FOR_TEST
 
     @classmethod
@@ -261,52 +266,49 @@ if __name__ == "__main__":
     unittest.main()
 ```
 
-## Step 4: Model Path Constants and Local Availability
+## Step 4: Model Path Constants and Availability
 
-### Local Model Paths
+### CRITICAL: Use Constants, Not Hardcoded Paths
 
-Local model weights are stored at `/home/weights/` on the host, and are accessible inside the Docker container at the same path `/home/weights/` (via the `-v /home:/home` mount).
+**Always import model weight path constants from `sglang.test.ascend.test_ascend_utils`**. These constants automatically resolve to the correct path:
+- In CI: `/root/.cache/modelscope/hub/models/<model_name>`
+- Locally: `/home/weights/<model_name>`
 
-**Important**: Model availability verification is the **user's responsibility** before running tests. Use the mapping table below to select a model that is known to be locally available. Always prefer models with confirmed local paths.
+Never hardcode paths like `"/home/weights/LLM-Research/Llama-3.2-1B-Instruct"` in generated tests. Always use the constant:
 
-### Local Model Availability Mapping
-
-| Test Constant | CI Path (under `/root/.cache/modelscope/hub/models/`) | Local Path (`/home/weights/`) | Available Locally? | Replacement If Missing |
-|---|---|---|---|---|
-| `LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH` | `LLM-Research/Llama-3.2-1B-Instruct` | `/home/weights/LLM-Research/Llama-3.2-1B-Instruct` | ✅ Available | — |
-| `LLAMA_3_1_8B_INSTRUCT_WEIGHTS_PATH` | `AI-ModelScope/Llama-3.1-8B-Instruct` | `/home/weights/LLM-Research/Meta-Llama-3.1-8B-Instruct` | ⚠️ Different path | Use `/home/weights/LLM-Research/Meta-Llama-3.1-8B-Instruct` |
-| `QWEN2_5_7B_INSTRUCT_WEIGHTS_PATH` | `Qwen/Qwen2.5-7B-Instruct` | `/home/weights/Qwen/Qwen2.5-7B-Instruct` | ✅ Available | — |
-| `QWEN3_8B_WEIGHTS_PATH` | `Qwen/Qwen3-8B` | `/home/weights/Qwen/Qwen3-8B` | ✅ Available | — |
-| `QWEN3_0_6B_WEIGHTS_PATH` | `Qwen/Qwen3-0.6B` | `/home/weights/Qwen3-0.6B` | ✅ Available | — |
-| `QWEN3_VL_8B_INSTRUCT_WEIGHTS_PATH` | `Qwen/Qwen3-VL-8B-Instruct` | `/home/weights/Qwen/Qwen3-VL-8B-Instruct` | ✅ Available | — |
-| `QWEN2_5_VL_7B_INSTRUCT_WEIGHTS_PATH` | `Qwen/Qwen2.5-VL-7B-Instruct` | `/home/weights/Qwen2.5-VL-7B-Instruct` | ✅ Available | — |
-| `GLM_4_5V_WEIGHTS_PATH` | `ZhipuAI/GLM-4.5V` | `/home/weights/GLM-4.5V` | ✅ Available | — |
-| `BAICHUAN2_13B_CHAT_WEIGHTS_PATH` | `baichuan-inc/Baichuan2-13B-Chat` | `/home/weights/Baichuan2-13B` | ✅ Available | — |
-| `LLAMA_2_7B_WEIGHTS_PATH` | `LLM-Research/Llama-2-7B` | `/home/weights/Llama-2-7b-chat-hf` | ⚠️ Different model | Use `/home/weights/Llama-2-7b-chat-hf` (chat version) |
-| `DBRX_INSTRUCT_WEIGHTS_PATH` | `AI-ModelScope/dbrx-instruct` | `/home/weights/AI-ModelScope/dbrx-instruct` | ✅ Available | — |
-| `QWEN3_32B_WEIGHTS_PATH` | `Qwen/Qwen3-32B` | `/home/weights/Qwen/Qwen3-32B` | ✅ Available | — |
-| `MINICPM_O_2_6_WEIGHTS_PATH` | `openbmb/MiniCPM-o-2_6` | — | ❌ Not available | Use `QWEN3_VL_8B_INSTRUCT_WEIGHTS_PATH` for multimodal tests, or `QWEN2_5_7B_INSTRUCT_WEIGHTS_PATH` for warmup tests |
-| `DEEPSEEK_CODER_1_3_B_BASE_PATH` | `deepseek-ai/deepseek-coder-1.3b-base` | — | ❌ Not available | Use `QWEN3_0_6B_WEIGHTS_PATH` (`/home/weights/Qwen3-0.6B`) for small model FIM tests, or `LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH` for basic parameter tests |
-
-### How to Use Local Model Paths in Generated Tests
-
-Generated test files use **direct local paths** for model weights. The Docker container mounts `/home:/home`, so `/home/weights/` on the host is accessible at `/home/weights/` inside the container.
-
-Example:
 ```python
-model = "/home/weights/LLM-Research/Llama-3.2-1B-Instruct"
+from sglang.test.ascend.test_ascend_utils import LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH
+# ...
+model = LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH
 ```
 
-**Pre-generation model selection**: Before writing any test file, choose a model from the "Available Locally" column in the mapping table above. **Do not rely on executing `ls` from the generation context**; instead, instruct the user to verify availability before running tests, using a command like:
-```bash
-docker exec npu-api-adaptation-checker ls /home/weights/LLM-Research/Llama-3.2-1B-Instruct/config.json
-```
+### Model Weight Constants Reference
 
-Model selection guidelines:
-- For 1-NPU basic tests: `/home/weights/LLM-Research/Llama-3.2-1B-Instruct` (smallest, fastest)
-- For 1-NPU accuracy tests: `/home/weights/LLM-Research/Meta-Llama-3.1-8B-Instruct`
-- For multimodal tests: `/home/weights/Qwen/Qwen3-VL-8B-Instruct`
-- For FIM/completion tests: `/home/weights/Qwen3-0.6B`
+Below is a reference of commonly used model weight constants from `sglang.test.ascend.test_ascend_utils`. Always prefer constants from this module over hardcoded paths.
+
+| Constant Name | CI Path (under `MODEL_WEIGHTS_DIR`) | Local Path (`/home/weights/`) | Notes |
+|---|---|---|---|
+| `LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH` | `LLM-Research/Llama-3.2-1B-Instruct` | `/home/weights/LLM-Research/Llama-3.2-1B-Instruct` | ✅ Best for 1-NPU basic tests (smallest) |
+| `META_LLAMA_3_1_8B_INSTRUCT` | `LLM-Research/Meta-Llama-3.1-8B-Instruct` | `/home/weights/LLM-Research/Meta-Llama-3.1-8B-Instruct` | ✅ Best for 1-NPU accuracy tests |
+| `QWEN2_5_7B_INSTRUCT_WEIGHTS_PATH` | `Qwen/Qwen2.5-7B-Instruct` | `/home/weights/Qwen/Qwen2.5-7B-Instruct` | ✅ Available |
+| `QWEN3_8B_WEIGHTS_PATH` | `Qwen/Qwen3-8B` | `/home/weights/Qwen/Qwen3-8B` | ✅ Available |
+| `QWEN3_0_6B_WEIGHTS_PATH` | `Qwen/Qwen3-0.6B` | `/home/weights/Qwen3-0.6B` | ✅ Best for FIM/completion tests |
+| `QWEN3_VL_8B_INSTRUCT_WEIGHTS_PATH` | `Qwen/Qwen3-VL-8B-Instruct` | `/home/weights/Qwen/Qwen3-VL-8B-Instruct` | ✅ Best for multimodal tests |
+| `QWEN2_5_VL_7B_INSTRUCT_WEIGHTS_PATH` | `Qwen/Qwen2.5-VL-7B-Instruct` | `/home/weights/Qwen2.5-VL-7B-Instruct` | ✅ Available |
+| `GLM_4_5V_WEIGHTS_PATH` | `ZhipuAI/GLM-4.5V` | `/home/weights/GLM-4.5V` | ✅ Available |
+| `BAICHUAN2_13B_CHAT_WEIGHTS_PATH` | `baichuan-inc/Baichuan2-13B-Chat` | `/home/weights/Baichuan2-13B` | ✅ Available |
+| `MINICPM_O_2_6_WEIGHTS_PATH` | `openbmb/MiniCPM-o-2_6` | — | ❌ Not available locally; use `QWEN3_VL_8B_INSTRUCT_WEIGHTS_PATH` for multimodal, `QWEN2_5_7B_INSTRUCT_WEIGHTS_PATH` for warmup |
+| `DEEPSEEK_CODER_1_3_B_BASE_PATH` | `deepseek-ai/deepseek-coder-1.3b-base` | — | ❌ Not available locally; use `QWEN3_0_6B_WEIGHTS_PATH` for FIM, `LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH` for basic |
+
+> **Note**: `LLAMA_3_1_8B_INSTRUCT_WEIGHTS_PATH` points to `AI-ModelScope/Llama-3.1-8B-Instruct` (CI path), but locally use `META_LLAMA_3_1_8B_INSTRUCT` which resolves to `LLM-Research/Meta-Llama-3.1-8B-Instruct` (the confirmed local path).
+
+### Pre-generation Model Selection Guidelines
+
+- For 1-NPU basic tests: `LLAMA_3_2_1B_INSTRUCT_WEIGHTS_PATH` (smallest, fastest)
+- For 1-NPU accuracy tests: `META_LLAMA_3_1_8B_INSTRUCT`
+- For multimodal tests: `QWEN3_VL_8B_INSTRUCT_WEIGHTS_PATH`
+- For FIM/completion tests: `QWEN3_0_6B_WEIGHTS_PATH`
+- For warmup tests: `MINICPM_O_2_6_WEIGHTS_PATH` (CI only) or `QWEN2_5_7B_INSTRUCT_WEIGHTS_PATH` (local)
 
 ## Step 5: CI Registration Convention
 
@@ -315,8 +317,20 @@ register_npu_ci(
     est_time=200,            # Estimated test time in seconds; 200s for small models, 400s for 7-8B
     suite="nightly-1-npu-a3",  # Suite name: nightly-<num_npu>-npu-<hardware>
     nightly=True,           # Whether to run in nightly CI
-    disabled="run failed",  # Optional: disable if known to fail
 )
+```
+
+The full signature of `register_npu_ci` is:
+```python
+def register_npu_ci(
+    est_time: float,
+    suite: Optional[str] = None,
+    nightly: bool = False,
+    disabled: Optional[str] = None,
+    *,
+    stage: Optional[str] = None,
+    runner_config: Optional[str] = None,
+):
 ```
 
 Suite naming convention:
@@ -355,7 +369,7 @@ After generating the test file, run it inside the Docker container:
 docker cp test/registered/ascend/basic_function/parameter/test_npu_<name>.py npu-api-adaptation-checker:/sglang/test/registered/ascend/basic_function/parameter/
 
 # Execute inside container (with PYTHONPATH set to use local code)
-docker exec npu-api-adaptation-checker bash -c "export PYTHONPATH=/sglang/python:\$PYTHONPATH && cd /sglang && python3 -m pytest test/registered/ascend/basic_function/parameter/test_npu_<name>.py -v"
+docker exec npu-api-adaptation-checker bash -c "export PYTHONPATH=/sglang/python:$PYTHONPATH && cd /sglang && python3 -m pytest test/registered/ascend/basic_function/parameter/test_npu_<name>.py -v"
 ```
 
 If the test fails, analyze the error output and:

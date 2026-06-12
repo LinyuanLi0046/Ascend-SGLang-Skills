@@ -3,11 +3,10 @@
 When reporting results, use the following **de-duplicated** format to avoid overlapping entries:
 
 ## Summary
-- Total API parameters in LLM ServerArgs (`srt/server_args.py`): X
-- Total API parameters in Multimodal ServerArgs (`multimodal_gen/runtime/server_args.py`): X
+- Total API parameters in ServerArgs (`python/sglang/srt/server_args.py`): X
 - Parameters documented in NPU support features: Y
 - New parameters (not in NPU doc): Z (Local: L, Community: M, Previously Missing: P)
-- Removed parameters (in NPU doc but not in any ServerArgs): W
+- Removed parameters (in NPU doc but not in ServerArgs): W
 - Parameters with changed default values (neither new nor removed): C
 
 ## New API Parameters (Not in NPU Doc)
@@ -48,4 +47,4 @@ if args.<param_name> is None:
 | Special For GPU | X |
 | Experimental | X |
 | New (needs triage) | X |
-| Not in NPU documentation (multimodal) | X |
+| Not in NPU documentation | X |

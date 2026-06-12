@@ -7,8 +7,8 @@ Use git to detect parameter changes from **two sources**: local uncommitted chan
 ### 1a. Local Uncommitted Changes
 
 ```bash
-git diff -- python/sglang/srt/server_args.py python/sglang/multimodal_gen/runtime/server_args.py
-git diff --cached -- python/sglang/srt/server_args.py python/sglang/multimodal_gen/runtime/server_args.py
+git diff -- python/sglang/srt/server_args.py
+git diff --cached -- python/sglang/srt/server_args.py
 ```
 
 ### 1b. Recent Community Commits
@@ -17,25 +17,29 @@ Find when the NPU support features doc was last updated, then check all ServerAr
 
 ```bash
 # Find the last commit that modified the NPU support features doc (prefer new docs, fallback to old)
-git log -1 --format="%H %ci" -- docs_new/docs/hardware-platforms/ascend-npus/ascend_npu_support_features.mdx || \
-git log -1 --format="%H %ci" -- docs/platforms/ascend/ascend_npu_support_features.md
+LAST_NPU_COMMIT=$(git log -1 --format="%H" -- docs_new/docs/hardware-platforms/ascend-npus/ascend_npu_support_features.mdx || git log -1 --format="%H" -- docs/platforms/ascend/ascend_npu_support_features.md)
 
 # Check ServerArgs changes since that commit
-git diff <last_npu_doc_commit>..HEAD -- python/sglang/srt/server_args.py python/sglang/multimodal_gen/runtime/server_args.py
+git diff "${LAST_NPU_COMMIT}"..HEAD -- python/sglang/srt/server_args.py
 ```
 
 Alternatively, check changes over a specific time range (e.g., last 30 days):
 
 ```bash
-# Use relative date to avoid hardcoded ranges
-SINCE_DATE=$(date -d '30 days ago' +%Y-%m-%d)
-git diff $(git log -1 --format="%H" --before="$SINCE_DATE")..HEAD -- python/sglang/srt/server_args.py python/sglang/multimodal_gen/runtime/server_args.py
+# Cross-platform date calculation:
+# Linux: SINCE_DATE=$(date -d '30 days ago' +%Y-%m-%d)
+# macOS: SINCE_DATE=$(date -v-30d +%Y-%m-%d)
+# Use git's built-in relative date syntax instead (works on all platforms):
+git diff $(git log -1 --format="%H" --before="2025-01-01")..HEAD -- python/sglang/srt/server_args.py
+
+# Or simply use --since with git log (most reliable cross-platform approach):
+git log --oneline --since="30 days ago" -- python/sglang/srt/server_args.py
 ```
 
 Or list individual commits that touched ServerArgs files:
 
 ```bash
-git log --oneline --since="30 days ago" -- python/sglang/srt/server_args.py python/sglang/multimodal_gen/runtime/server_args.py
+git log --oneline --since="30 days ago" -- python/sglang/srt/server_args.py
 ```
 
 ### 1c. Parse Diff Output
@@ -53,12 +57,11 @@ Tag each detected change with its source:
 
 ## Step 2: Extract All ServerArgs Fields
 
-Read **both** ServerArgs files and extract all fields from each `ServerArgs` dataclass:
+Read the ServerArgs file and extract all fields from the `ServerArgs` dataclass:
 
-1. `python/sglang/srt/server_args.py` — LLM serving ServerArgs
-2. `python/sglang/multimodal_gen/runtime/server_args.py` — Multimodal generation ServerArgs
+1. `python/sglang/srt/server_args.py` — ServerArgs definition
 
-Each field is a server argument. Group them by source file and category (the comments in the dataclass indicate categories like "Model and tokenizer", "HTTP server", "Quantization and data type", etc.).
+Each field is a server argument. Group them by category (the comments in the dataclass indicate categories like "Model and tokenizer", "HTTP server", "Quantization and data type", etc.).
 
 ## Step 3: Extract NPU-Supported Arguments
 
@@ -70,7 +73,7 @@ Parse the markdown tables. The "Server supported" column indicates the adaptatio
 - **Special For GPU** — GPU-specific, not applicable to NPU
 - **Experimental** — Experimental support on NPU
 
-**Note**: The NPU support features doc primarily covers LLM-serving parameters. Parameters exclusive to `multimodal_gen/runtime/server_args.py` are likely absent from these tables; mark them as "Not in NPU documentation" until manually assessed.
+**Note**: The NPU support features doc covers parameters defined in `python/sglang/srt/server_args.py`. Any parameter not listed in the doc should be marked as "Not in NPU documentation" until manually assessed.
 
 ## Step 4: Compare and Identify Differences
 
@@ -90,6 +93,8 @@ For each new parameter not in the NPU doc, determine its likely NPU adaptation s
 - If the parameter is GPU-specific (e.g., CUDA graph, NVIDIA-specific quantization), mark as "Special For GPU"
 - If the parameter is platform-agnostic (e.g., scheduling, logging), mark as "Likely A2, A3"
 - If the parameter involves NPU-specific backends, check `_handle_npu_backends()` in the corresponding ServerArgs file for NPU-specific handling
+
+**Note**: All NPU adaptation code for server arguments should be placed in `_handle_npu_backends()` (in `python/sglang/srt/server_args.py`) or `set_default_server_args()` (in `python/sglang/srt/hardware_backend/npu/utils.py`).
 
 ## Step 6: Auto-Adapt Simple Parameters
 
@@ -165,7 +170,7 @@ if self.device == "npu":
     self.<param_name> = <value>  # <reason>
 ```
 
-**Important**: After generating adaptation code, also update the NPU support features doc (`docs/platforms/ascend/ascend_npu_support_features.md`) to add the new parameter with its status.
+**Important**: After generating adaptation code, also update the NPU support features doc to add the new parameter with its status. Prefer updating `docs_new/docs/hardware-platforms/ascend-npus/ascend_npu_support_features.mdx`; fall back to `docs/platforms/ascend/ascend_npu_support_features.md` if the new doc does not exist.
 
 ## Step 7: Check NPU Code Paths
 
