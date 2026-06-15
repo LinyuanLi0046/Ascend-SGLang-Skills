@@ -300,8 +300,114 @@ bash {{SKILL_DIR}}/scripts/pre-step-check.sh 5 {WORKSPACE_DIR}
        --output {WORKSPACE_DIR}/logs/real_inference.json
    ```
 4. 读取 `{WORKSPACE_DIR}/logs/real_inference.json` 的 `status` 字段:
-   - `"passed"` → 将 `adapter_state.json.validation.real_weight_passed` 置为 true,关闭服务,进入 Step 6
+   - `"passed"` → 将 `adapter_state.json.validation.real_weight_passed` 置为 true,关闭服务,进入 Step 5.5
    - 其他值 → **STOP,进入 Error Handling Flow**
+
+### Step 5.5:Triton 算子替换(NPU 性能优化)
+
+**【前置条件】**:Step 5 两阶段验证已通过(`adapter_state.json.validation.real_weight_passed == true`)。
+
+**职责**:将整个适配过程中产生的 native PyTorch 算子实现,替换为 sglang 自带的 Triton kernel 版本,以提升 NPU 上的推理性能。
+
+**背景**:在适配过程中,为了让模型在 NPU 上先跑通,可能使用了 native PyTorch 实现作为 fallback(例如从 sgl-kernel-npu site-packages 复制的纯 PyTorch 算子,或在 debug 时用 native torch 算子临时替代不兼容的 NPU kernel)。这些 native 版本功能正确但性能较差。sglang 的 `layers/` 目录下有对应的 Triton 版本,应优先使用以获得更好的推理性能。
+
+**替换原则**:
+- **扫描范围**:sgl-kernel-npu 仓中所有不含 `import triton` 的 .py 算子文件(不仅限于 mamba 模块)
+- **匹配策略**:按文件名在 sglang 的 `srt/layers/` 目录下查找同名或语义等价的 Triton 版本
+- **安全机制**:替换前备份原文件为 `.native_backup`;修改导入路径时备份为 `.pre_triton_backup`
+- **回退策略**:若 Triton 版本在 NPU 上报错,立即回退为 native 版本并记录原因
+
+**执行流程**:
+
+1. 运行 Triton 算子替换脚本(dry-run 先预览):
+   ```bash
+   python {{SKILL_DIR}}/scripts/triton_op_replace.py \
+       --sglang-dir {SGLANG_PYTHON_DIR} \
+       --sgl-kernel-npu-dir {SGL_KERNEL_NPU_DIR} \
+       --workspace-dir {WORKSPACE_DIR} \
+       --dry-run
+   ```
+   - `{SGLANG_PYTHON_DIR}`:sglang 仓的 python 目录(如 `/path/to/sglang/python`)
+   - `{SGL_KERNEL_NPU_DIR}`:sgl-kernel-npu 仓的包目录(如 `/path/to/sgl-kernel-npu/python/sgl_kernel_npu/sgl_kernel_npu`)
+
+2. 确认替换计划无误后,实际执行替换:
+   ```bash
+   python {{SKILL_DIR}}/scripts/triton_op_replace.py \
+       --sglang-dir {SGLANG_PYTHON_DIR} \
+       --sgl-kernel-npu-dir {SGL_KERNEL_NPU_DIR} \
+       --workspace-dir {WORKSPACE_DIR}
+   ```
+
+3. 脚本会自动:
+   - 扫描 sgl-kernel-npu 包中所有子模块的 native 实现(不含 `import triton` 的 .py 文件)
+   - 在 sglang `srt/layers/` 目录下查找对应的 Triton 版本
+   - 复制 Triton 版本到 sgl-kernel-npu 对应位置,备份原 native 文件为 `.native_backup`
+   - 修改 sglang 中所有引用被替换算子的导入路径(如将 `from sgl_kernel_npu.xxx.yyy import` 改为相对导入)
+
+4. 读取 `{WORKSPACE_DIR}/output/triton_replace_result.json`,确认替换结果
+
+5. 替换后需要重启服务验证 Triton 算子是否正常工作。如果 Triton 算子导致报错,回退为 native 版本:
+   ```bash
+   # 回退:恢复所有 .native_backup 文件
+   find {SGL_KERNEL_NPU_DIR} -name "*.native_backup" | while read f; do
+       mv "$f" "${f%.native_backup}"
+   done
+   # 回退所有被修改的导入路径文件
+   find {SGLANG_PYTHON_DIR} -name "*.pre_triton_backup" | while read f; do
+       mv "$f" "${f%.pre_triton_backup}"
+   done
+   ```
+
+6. 更新 `findings.md` → 记录 Triton 替换结果
+7. 运行 `mark-step-complete.sh 5.5 {WORKSPACE_DIR}`
+
+### Step 5.6:GSM8K 精度测试
+
+**【前置条件】**:Step 5.5 Triton 算子替换已完成(或确认无需替换)。
+
+**职责**:使用 GSM8K 数据集测试模型精度。精度不通过时需重新适配算子,直到通过。
+
+**判断标准**:
+- accuracy >= threshold 且 invalid == 0 → **通过**
+- accuracy < threshold 或 invalid > 0 → **不通过**,需要重新适配算子
+- **threshold 规则**:大模型(>=5B参数) threshold=0.8;小模型(<5B参数) threshold=0.3
+- **invalid == 0 是硬性条件**:任何 invalid 输出都表示算子适配有问题
+
+**执行流程**:
+
+1. 以真实权重启动服务(使用 Step 5 的启动命令,加上 Triton 算子替换后的配置)
+
+2. 运行 GSM8K 精度测试:
+   ```bash
+   python {{SKILL_DIR}}/scripts/gsm8k_accuracy_test.py \
+       --port 8000 \
+       --data-path /home/w00937173/run_file/gsm8k.jsonl \
+       --num-questions 10 \
+       --parallel {PARALLEL} \
+       --workspace-dir {WORKSPACE_DIR} \
+       --min-accuracy 0.8 \
+       --max-invalid 0.0
+   ```
+   - `--num-questions`:测试题数(默认 10,快速验证;完整验证用 1319)
+   - `--parallel`:并行请求数(根据服务器配置调整)
+   - `--min-accuracy`:最低精度阈值(默认 0.8)
+   - `--max-invalid`:最大 invalid 比率阈值(默认 0.0,即不允许任何 invalid)
+
+3. 读取 `{WORKSPACE_DIR}/output/gsm8k_accuracy_result.json`:
+   - `"passed": true` → 精度通过,进入 Step 6
+   - `"passed": false` → 精度不通过,进入精度修复循环:
+
+4. **精度修复循环**(最多迭代 10 次):
+   - 分析 `gsm8k_accuracy_result.json` 中的 `reason` 字段:
+     - `accuracy_x.xx_below_threshold_0.8` → 精度不足,需要排查算子精度问题
+     - `invalid_x.xx_above_threshold_0.0` → 有无效输出,需要排查算子稳定性问题
+   - 调用 Debug 工程师定位精度问题根因(按模板 D 执行)
+   - 修复后重新运行 Step 5.5 + 5.6
+   - **最多迭代 10 次。超出 → 上报用户寻求帮助**
+
+5. 更新 `findings.md` → 记录精度测试结果
+6. 更新 `adapter_state.json` → `validation.gsm8k_passed: true/false`
+7. 运行 `mark-step-complete.sh 5.6 {WORKSPACE_DIR}`
 
 ### Step 6:调用验证工程师
 
@@ -446,6 +552,8 @@ bash {{SKILL_DIR}}/scripts/check-step-complete.sh {WORKSPACE_DIR}
 | `build-agent-query.sh`    | 子 Agent 调用之前  | 构建带前置阅读 PREAMBLE 的完整 query               |
 | `mark-step-complete.sh`   | 每个 Step 之后    | 更新 last_completed_step / current_step    |
 | `run_tests.py`            | 5(A/B)        | 推理冒烟测试                                   |
+| `triton_op_replace.py`    | 5.5           | 将 sgl-kernel-npu native 算子替换为 sglang Triton 版本 |
+| `gsm8k_accuracy_test.py`  | 5.6           | GSM8K 数据集精度测试                           |
 | `post-error-check.sh`     | 5(出错时)        | 校验 Debug 工程师是否已被调用                       |
 | `check-step-complete.sh`  | Step 8 之前     | 质量门禁                                     |
 | `generate_report.py`      | 7             | 生成最终中文教程                                 |
@@ -462,5 +570,7 @@ bash {{SKILL_DIR}}/scripts/check-step-complete.sh {WORKSPACE_DIR}
 - [ ] 教程文档存在
 - [ ] (用户要求时)单次签名提交
 - [ ] 最终响应包含 commit hash(若有)、文件路径、关键命令
-- [ ] 若 precision_suspect=true:RCA + 修复报告存在,且 status ∈ {fixed, located_needs_human_fix, located_inconclusive, cannot_reproduce, hf_load_failed, launch_failed_handoff}
+- [ ] GSM8K 精度测试通过(accuracy >= 0.8, invalid == 0)
+- [ ] Triton 算子替换已完成(或确认无需替换)
+- [ ] 若有 Triton 算子回退,回退原因已记录
 - [ ] 若 status=fixed:`output/fix.patch` 存在,`root_cause.json.drift_after_fix.max_abs < tolerance.atol`
