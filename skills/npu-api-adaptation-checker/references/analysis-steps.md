@@ -59,7 +59,7 @@ Tag each detected change with its source:
 
 Read the ServerArgs file and extract all fields from the `ServerArgs` dataclass:
 
-1. `python/sglang/srt/server_args.py` — ServerArgs definition
+1. `python/sglang/srt/server_args.py` -- ServerArgs definition
 
 Each field is a server argument. Group them by category (the comments in the dataclass indicate categories like "Model and tokenizer", "HTTP server", "Quantization and data type", etc.).
 
@@ -68,10 +68,10 @@ Each field is a server argument. Group them by category (the comments in the dat
 **Document priority**: Read the new NPU support features document first (`docs_new/docs/hardware-platforms/ascend-npus/ascend_npu_support_features.mdx`). If it does not exist or lacks necessary tables, fall back to the old doc (`docs/platforms/ascend/ascend_npu_support_features.md`).
 
 Parse the markdown tables. The "Server supported" column indicates the adaptation status:
-- **A2, A3** — Fully supported on both Atlas 800I A2 and A3
-- **Planned** — Planned but not yet implemented
-- **Special For GPU** — GPU-specific, not applicable to NPU
-- **Experimental** — Experimental support on NPU
+- **A2, A3** -- Fully supported on both Atlas 800I A2 and A3
+- **Planned** -- Planned but not yet implemented
+- **Special For GPU** -- GPU-specific, not applicable to NPU
+- **Experimental** -- Experimental support on NPU
 
 **Note**: The NPU support features doc covers parameters defined in `python/sglang/srt/server_args.py`. Any parameter not listed in the doc should be marked as "Not in NPU documentation" until manually assessed.
 
@@ -83,8 +83,8 @@ Compare the full list of ServerArgs fields against the parsed NPU support featur
 3. **Status changes**: Arguments whose NPU support status has changed
 
 Cross-reference with Step 1 results to distinguish:
-- **Local Change**: from uncommitted git diff — the user's own modifications
-- **Community Change**: from recent commits since NPU doc was last updated — new/deprecated parameters from the community
+- **Local Change**: from uncommitted git diff -- the user's own modifications
+- **Community Change**: from recent commits since NPU doc was last updated -- new/deprecated parameters from the community
 - **Previously Missing**: already in the codebase but never documented in the NPU doc
 
 ## Step 5: Categorize New Parameters
@@ -96,40 +96,42 @@ For each new parameter not in the NPU doc, determine its likely NPU adaptation s
 
 **Note**: All NPU adaptation code for server arguments should be placed in `_handle_npu_backends()` (in `python/sglang/srt/server_args.py`) or `set_default_server_args()` (in `python/sglang/srt/hardware_backend/npu/utils.py`).
 
-## Step 6: Auto-Adapt Simple Parameters
+## Step 6: Recommend Adaptation Code (Suggestions Only)
 
-For each new parameter, classify it into one of three adaptation categories and take the corresponding action:
+**IMPORTANT: Do NOT apply any code changes to source files. This step identifies what changes are needed and presents them as recommendations in the report.** The user will decide whether to apply them.
 
-### Category 1: Auto-Adaptable (direct code generation)
+For each new parameter, classify it into one of three adaptation categories and recommend the corresponding action:
+
+### Category 1: Auto-Adaptable (recommend code, do not apply)
 
 These parameters can be adapted by adding a single assignment in `set_default_server_args()` (in `python/sglang/srt/hardware_backend/npu/utils.py`) or `_handle_npu_backends()` (in `python/sglang/srt/server_args.py`). Patterns include:
 
-| Pattern | Example | Generated Code |
+| Pattern | Example | Recommended Code |
 |---------|---------|----------------|
 | Force-disable CUDA-exclusive feature | `--enable-nccl-nvls`, `--enable-symm-mem`, `--enable-mscclpp` | `args.<param_name> = False` or `args.<param_name> = True` (disable flag) |
 | Force-set backend to NPU value | `--fp8-gemm-runner-backend` | `args.<param_name> = "<npu_value>"` |
 | Force-disable incompatible feature | `--disable-custom-all-reduce` | `args.<param_name> = True` |
 | Set NPU-specific default | `--page-size` | `if args.<param_name> is None: args.<param_name> = <npu_default>` |
 
-**Action**: Directly generate the adaptation code and add it to the appropriate function. Use `set_default_server_args()` for simple defaults and `_handle_npu_backends()` for logic that requires conditional checks.
+**Action**: Present the adaptation code as a suggestion in the report. Use `set_default_server_args()` for simple defaults and `_handle_npu_backends()` for logic that requires conditional checks. Prefix with "Suggested change (not applied):".
 
 **Naming heuristics for auto-detection**:
-- Parameter name contains `cuda`, `nccl`, `nvls`, `triton`, `flashinfer`, `cutlass`, `flashmla` → likely Category 1 (force-disable or force-set)
-- Parameter name contains `gpu`, `nvidia` → likely Category 1 (force-disable)
-- Parameter is a boolean `enable_*` flag for a GPU-only feature → Category 1 (set to `False`)
-- Parameter is a boolean `disable_*` flag for a GPU-only feature → Category 1 (set to `True`)
+- Parameter name contains `cuda`, `nccl`, `nvls`, `triton`, `flashinfer`, `cutlass`, `flashmla` -> likely Category 1 (recommend force-disable or force-set)
+- Parameter name contains `gpu`, `nvidia` -> likely Category 1 (recommend force-disable)
+- Parameter is a boolean `enable_*` flag for a GPU-only feature -> Category 1 (recommend set to `False`)
+- Parameter is a boolean `disable_*` flag for a GPU-only feature -> Category 1 (recommend set to `True`)
 
-### Category 2: Conditional (generate template with TODO)
+### Category 2: Conditional (recommend template with TODO)
 
 These parameters need runtime conditions (hardware model, model architecture, other parameter values). Patterns include:
 
-| Pattern | Example | Generated Code |
+| Pattern | Example | Recommended Code |
 |---------|---------|----------------|
 | Depends on NPU memory size | `--chunked-prefill-size` | `if args.<param> is None: args.<param> = <value_based_on_npu_mem>` |
 | Depends on model architecture | `--hicache-mem-layout` | `if args.use_mla_backend(): args.<param> = ...` |
 | Depends on tp_size | `--cuda-graph-max-bs` | `if args.tp_size < 4: args.<param> = ...` |
 
-**Action**: Generate code template with `# TODO: verify on NPU` comment. The user must verify the correct values.
+**Action**: Recommend a code template with `# TODO: verify on NPU` comment. The user must verify the correct values before applying.
 
 ### Category 3: Not Auto-Adaptable (kernel dependency)
 
@@ -141,36 +143,36 @@ These parameters require NPU kernel implementations that may not exist. Patterns
 | Third-party GPU-only library | `--quantization-param-path`, `--modelopt-*` |
 | GPU hardware feature | `--enable-nccl-nvls`, `--fp4-gemm-runner-backend` |
 
-**Action**: Mark as "Special For GPU" in the NPU support features doc. Do not generate adaptation code.
+**Action**: Recommend marking as "Special For GPU" in the NPU support features doc. Do not recommend adaptation code.
 
-### Auto-Adaptation Code Generation
+### Recommended Code Format (for report, not applied)
 
-For Category 1 and 2 parameters, generate the code to be added to `set_default_server_args()`:
+For Category 1 and 2 parameters, present the recommended code in the report as:
 
 ```python
-# In python/sglang/srt/hardware_backend/npu/utils.py, function set_default_server_args()
+# Suggested: add to python/sglang/srt/hardware_backend/npu/utils.py, function set_default_server_args()
 
 # --- Auto-adapted parameters (generated by npu-api-adaptation-checker) ---
 # Category 1: Auto-adaptable
 args.<param_name> = <value>  # <reason>
 
 # Category 2: Conditional (needs verification)
-# TODO: verify on NPU — <reason for conditional>
+# TODO: verify on NPU - <reason for conditional>
 if args.<param_name> is None:
     args.<param_name> = <suggested_value>
 ```
 
-Or for parameters that belong in `_handle_npu_backends()` (when the logic involves conditional checks beyond simple defaults):
+Or for parameters that belong in `_handle_npu_backends()`:
 
 ```python
-# In python/sglang/srt/server_args.py, function _handle_npu_backends()
+# Suggested: add to python/sglang/srt/server_args.py, function _handle_npu_backends()
 
 # --- Auto-adapted parameters (generated by npu-api-adaptation-checker) ---
 if self.device == "npu":
     self.<param_name> = <value>  # <reason>
 ```
 
-**Important**: After generating adaptation code, also update the NPU support features doc to add the new parameter with its status. Prefer updating `docs_new/docs/hardware-platforms/ascend-npus/ascend_npu_support_features.mdx`; fall back to `docs/platforms/ascend/ascend_npu_support_features.md` if the new doc does not exist.
+**After generating adaptation recommendations**, also suggest updates to the NPU support features doc to add the new parameter with its status. Prefer suggesting updates to `docs_new/docs/hardware-platforms/ascend-npus/ascend_npu_support_features.mdx`; fall back to `docs/platforms/ascend/ascend_npu_support_features.md` if the new doc does not exist.
 
 ## Step 7: Check NPU Code Paths
 

@@ -354,11 +354,10 @@ other_args = [
 
 After generating the test file, verify:
 
-1. **Server starts successfully**: The server with the new parameter should start without errors
+1. **Server reaches ready state**: Launch server in background, poll for `ready to roll!`. Do NOT kill on ERROR log lines -- NPU environments emit harmless ERRORs from missing optional modules. Only `ready to roll!` + successful inference matters.
 2. **Parameter takes effect**: Check `/server_info` endpoint to confirm the parameter value is applied
-3. **Inference works**: A basic generate request should return a valid response
-4. **No NPU-specific errors**: Check server logs for any NPU-related warnings or errors
-5. **Test passes**: Run `python3 -m pytest <test_file> -v` inside the Docker container
+3. **Inference works**: Send a generate request; response should be valid
+4. **Test passes**: Run `python3 -m pytest <test_file> -v` inside the Docker container
 
 ## Step 8: Running Generated Tests in Docker
 
