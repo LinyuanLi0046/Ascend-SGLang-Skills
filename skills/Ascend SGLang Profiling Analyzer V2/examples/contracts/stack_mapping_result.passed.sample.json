@@ -1,0 +1,63 @@
+{
+  "status": "passed",
+  "coverage": {
+    "total_span_count": 11531,
+    "mapped_span_count": 11531,
+    "unresolved_semantic_span_count": 0
+  },
+  "quality_signals": {
+    "top_repeated_primary_code_location": "python/sglang/srt/model_executor/model_runner.py:241",
+    "top_repeated_primary_code_location_count": 1,
+    "top_repeated_primary_file_function": "python/sglang/srt/model_executor/model_runner.py:forward_extend",
+    "top_repeated_primary_file_function_count": 1,
+    "resolved_external_row_count": 1,
+    "top_repeated_primary_file_function_ratio": 1,
+    "top_repeated_primary_file_function_semantic_class_count": 1,
+    "top_repeated_primary_file_function_unique_span_name_count": 1,
+    "top_repeated_primary_file_function_path_class": "implementation_or_other",
+    "collapse_warning": false
+  },
+  "evidence_inputs": {
+    "stack_call_paths_built": true,
+    "stack_call_paths_note": "stack_call_paths.json available and consumed.",
+    "python_tracer_frames": 1024,
+    "python_tracer_repo_frames": 768,
+    "python_tracer_note": "python tracer available and used for repo ranking."
+  },
+  "external_span_mapping_payload": {
+    "status": "passed",
+    "row_count": 1,
+    "rows": [
+      {
+        "span_id": "s_000123",
+        "primary_code_location_kind": "semantic_line_selection",
+        "semantic_class": "compute",
+        "stream_role": "compute",
+        "primary_file_function": {
+          "repo_relative_path": "python/sglang/srt/model_executor/model_runner.py",
+          "symbol": "forward_extend",
+          "entry_line": 213
+        },
+        "file_function_candidates": [
+          {
+            "repo_relative_path": "python/sglang/srt/model_executor/model_runner.py",
+            "symbol": "forward_extend",
+            "entry_line": 213
+          }
+        ],
+        "code_line_candidates": [
+          {
+            "code_location": "python/sglang/srt/model_executor/model_runner.py:241"
+          }
+        ],
+        "implementation_evidence_present": true,
+        "communication_impl_evidence_present": false,
+        "compute_impl_evidence_present": true,
+        "mapping_risk_flags": [],
+        "recommended_primary_location_kind": "",
+        "recommended_unresolved_reason": "",
+        "selection_reason": "best semantic and tracer-aligned code line."
+      }
+    ]
+  }
+}

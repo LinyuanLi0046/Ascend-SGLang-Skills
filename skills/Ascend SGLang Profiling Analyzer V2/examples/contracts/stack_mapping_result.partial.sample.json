@@ -1,0 +1,62 @@
+{
+  "status": "partial",
+  "coverage": {
+    "total_span_count": 11531,
+    "mapped_span_count": 11520,
+    "unresolved_semantic_span_count": 11
+  },
+  "quality_signals": {
+    "top_repeated_primary_code_location": "python/sglang/srt/model_executor/model_runner.py:213",
+    "top_repeated_primary_code_location_count": 1,
+    "top_repeated_primary_file_function": "python/sglang/srt/model_executor/model_runner.py:forward_extend",
+    "top_repeated_primary_file_function_count": 1,
+    "resolved_external_row_count": 1,
+    "top_repeated_primary_file_function_ratio": 1.0,
+    "top_repeated_primary_file_function_semantic_class_count": 1,
+    "top_repeated_primary_file_function_unique_span_name_count": 1,
+    "top_repeated_primary_file_function_path_class": "implementation_or_other",
+    "collapse_warning": false
+  },
+  "evidence_inputs": {
+    "stack_call_paths_built": true,
+    "stack_call_paths_note": "stack_call_paths.json available and consumed.",
+    "python_tracer_frames": 1024,
+    "python_tracer_repo_frames": 768,
+    "python_tracer_note": "python tracer available and used for repo ranking."
+  },
+  "external_span_mapping_payload": {
+    "status": "partial",
+    "row_count": 1,
+    "rows": [
+      {
+        "span_id": "s_000124",
+        "primary_code_location_kind": "function_entry_fallback",
+        "semantic_class": "communication",
+        "stream_role": "communication",
+        "primary_file_function": {
+          "repo_relative_path": "python/sglang/srt/model_executor/model_runner.py",
+          "symbol": "forward_extend",
+          "entry_line": 213
+        },
+        "file_function_candidates": [
+          {
+            "repo_relative_path": "python/sglang/srt/model_executor/model_runner.py",
+            "symbol": "forward_extend",
+            "entry_line": 213
+          }
+        ],
+        "code_line_candidates": [],
+        "implementation_evidence_present": false,
+        "communication_impl_evidence_present": false,
+        "compute_impl_evidence_present": false,
+        "mapping_risk_flags": [
+          "missing_impl_side_repo_frame",
+          "communication_only_orchestration_repo_frames"
+        ],
+        "recommended_primary_location_kind": "function_entry_fallback",
+        "recommended_unresolved_reason": "communication_span_missing_impl_side_repo_frame",
+        "unresolved_reason": "communication_span_missing_impl_side_repo_frame"
+      }
+    ]
+  }
+}

@@ -1,0 +1,240 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "stack_mapping_result",
+  "type": "object",
+  "required": [
+    "status",
+    "coverage",
+    "evidence_inputs",
+    "external_span_mapping_payload"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["passed", "partial"]
+    },
+    "coverage": {
+      "type": "object"
+    },
+    "quality_signals": {
+      "type": "object",
+      "properties": {
+        "top_repeated_primary_code_location": {
+          "type": "string"
+        },
+        "top_repeated_primary_code_location_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "top_repeated_primary_file_function": {
+          "type": "string"
+        },
+        "top_repeated_primary_file_function_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "resolved_external_row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "top_repeated_primary_file_function_ratio": {
+          "type": "number",
+          "minimum": 0
+        },
+        "top_repeated_primary_file_function_semantic_class_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "top_repeated_primary_file_function_unique_span_name_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "top_repeated_primary_file_function_path_class": {
+          "type": "string"
+        },
+        "collapse_warning": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "evidence_inputs": {
+      "type": "object",
+      "required": [
+        "stack_call_paths_built",
+        "stack_call_paths_note",
+        "python_tracer_frames",
+        "python_tracer_repo_frames",
+        "python_tracer_note"
+      ],
+      "properties": {
+        "stack_call_paths_built": {
+          "type": "boolean"
+        },
+        "stack_call_paths_note": {
+          "type": "string"
+        },
+        "python_tracer_frames": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "python_tracer_repo_frames": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "python_tracer_note": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "external_span_mapping_payload": {
+      "$ref": "#/definitions/rowsPayload"
+    }
+  },
+  "additionalProperties": true,
+  "definitions": {
+    "rowsPayload": {
+      "type": "object",
+      "required": ["status", "row_count", "rows"],
+      "properties": {
+        "status": {
+          "type": "string"
+        },
+        "row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows": {
+          "type": "array"
+        }
+      },
+      "additionalProperties": true
+    },
+    "fileFunction": {
+      "type": "object",
+      "required": ["repo_relative_path", "symbol", "entry_line"],
+      "properties": {
+        "repo_relative_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "symbol": {
+          "type": "string",
+          "minLength": 1
+        },
+        "entry_line": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "codeLineCandidate": {
+      "type": "object",
+      "required": ["code_location"],
+      "properties": {
+        "code_location": {
+          "type": "string",
+          "pattern": "^.+:\\d+$"
+        }
+      },
+      "additionalProperties": true
+    },
+    "externalSpanRow": {
+      "type": "object",
+      "required": [
+        "span_id",
+        "primary_code_location_kind",
+        "primary_file_function",
+        "file_function_candidates",
+        "code_line_candidates"
+      ],
+      "properties": {
+        "span_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "primary_code_location_kind": {
+          "type": "string"
+        },
+        "semantic_class": {
+          "type": "string"
+        },
+        "stream_role": {
+          "type": "string"
+        },
+        "primary_file_function": {
+          "$ref": "#/definitions/fileFunction"
+        },
+        "file_function_candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/fileFunction"
+          }
+        },
+        "code_line_candidates": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/codeLineCandidate"
+          }
+        },
+        "implementation_evidence_present": {
+          "type": "boolean"
+        },
+        "communication_impl_evidence_present": {
+          "type": "boolean"
+        },
+        "compute_impl_evidence_present": {
+          "type": "boolean"
+        },
+        "mapping_risk_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "recommended_primary_location_kind": {
+          "type": "string"
+        },
+        "recommended_unresolved_reason": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "graphPhaseRow": {
+      "type": "object",
+      "required": [
+        "span_id",
+        "candidate_phase",
+        "matched_graph_kind",
+        "start_ns",
+        "end_ns"
+      ],
+      "properties": {
+        "span_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "candidate_phase": {
+          "type": "string",
+          "enum": ["verify", "draft_prefill", "draft_decode", "decode"]
+        },
+        "matched_graph_kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "start_ns": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "end_ns": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}
