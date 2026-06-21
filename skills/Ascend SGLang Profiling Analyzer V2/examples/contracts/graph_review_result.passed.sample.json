@@ -1,0 +1,112 @@
+{
+  "status": "passed",
+  "review_outcome": "approved",
+  "reviewed_mapping_granularity": "per_span_forward_code",
+  "review_summary": "All graph operator spans are aligned to operator/device call sites.",
+  "blocking_issues": [],
+  "knowledge_reference_check": {
+    "model_config_and_launch_fields_read": true,
+    "sglang_path_map_read": true,
+    "forward_analysis_rules_read": true,
+    "repo_and_profiling_override_acknowledged": true,
+    "notes": "Current repo facts dominate final conclusions."
+  },
+  "rules_conformance_check": {
+    "checked_against_forward_analysis_rules": true,
+    "status": "aligned",
+    "summary": "No remaining replay-entry or module-call boundary mapping.",
+    "violations": []
+  },
+  "repo_file_evidence_check": {
+    "checked_against_repo_divergence_report": true,
+    "existing_files_relied_on": [
+      "python/sglang/srt/model_executor/model_runner.py"
+    ],
+    "missing_files_relied_on": [],
+    "contradictions": []
+  },
+  "path_reconstruction": {
+    "status": "passed",
+    "summary": "Forward path reconstructed through verified operator call sites.",
+    "sequence_evidence_summary": {
+      "ordered_operator_span_sequence_built": true,
+      "distinctive_anchor_count": 1,
+      "repetitive_segment_count": 1
+    },
+    "distinctive_kernel_anchors": [
+      {
+        "phase": "verify",
+        "graph_operator_span_id": "graph_operator_span_00001",
+        "anchor_kind": "distinctive_kernel"
+      }
+    ],
+    "pattern_segments": [
+      {
+        "phase": "verify",
+        "segment_id": "verify_seg_0001",
+        "pattern_kind": "repetitive_operator_sequence"
+      }
+    ]
+  },
+  "span_alignment": {
+    "status": "passed",
+    "row_count": 1,
+    "rows": [
+      {
+        "span_id": "s_000031",
+        "graph_operator_span_id": "graph_operator_span_00001",
+        "location_kind": "operator_call",
+        "operator_evidence_kind": "torch_npu_call",
+        "requires_further_drilldown": false,
+        "code_location": "python/sglang/srt/model_executor/model_runner.py:241"
+      }
+    ]
+  },
+  "artifact_promotion": {
+    "graph_execution_plan_updates": {
+      "status": "passed",
+      "mapping_granularity": "per_span_forward_code",
+      "identified_graph_span_ids": [
+        "s_000031"
+      ]
+    },
+    "graph_forward_context_updates": {
+      "status": "passed",
+      "mapping_granularity": "per_span_forward_code"
+    },
+    "graph_span_candidates_payload": {
+      "status": "passed",
+      "row_count": 1,
+      "rows": [
+        {
+          "phase": "verify",
+          "span_id": "s_000031"
+        }
+      ]
+    },
+    "forward_segment_template_payload": {
+      "status": "passed",
+      "row_count": 1,
+      "rows": [
+        {
+          "phase": "verify",
+          "template_id": "verify_0001"
+        }
+      ]
+    },
+    "graph_span_alignment_payload": {
+      "status": "passed",
+      "row_count": 1,
+      "rows": [
+        {
+          "span_id": "s_000031",
+          "graph_operator_span_id": "graph_operator_span_00001",
+          "location_kind": "operator_call",
+          "operator_evidence_kind": "torch_npu_call",
+          "requires_further_drilldown": false,
+          "code_location": "python/sglang/srt/model_executor/model_runner.py:241"
+        }
+      ]
+    }
+  }
+}

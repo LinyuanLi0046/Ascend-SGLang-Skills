@@ -1,0 +1,333 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "graph_review_result",
+  "type": "object",
+  "required": [
+    "status",
+    "review_outcome",
+    "reviewed_mapping_granularity",
+    "review_summary",
+    "knowledge_reference_check",
+    "rules_conformance_check",
+    "repo_file_evidence_check",
+    "path_reconstruction",
+    "span_alignment",
+    "artifact_promotion"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["partial", "passed"]
+    },
+    "review_outcome": {
+      "type": "string",
+      "enum": ["approved", "blocked"]
+    },
+    "reviewed_mapping_granularity": {
+      "type": "string",
+      "minLength": 1
+    },
+    "review_summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "blocking_issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "knowledge_reference_check": {
+      "type": "object"
+    },
+    "rules_conformance_check": {
+      "type": "object"
+    },
+    "repo_file_evidence_check": {
+      "$ref": "#/definitions/repoFileEvidenceCheck"
+    },
+    "path_reconstruction": {
+      "type": "object",
+      "properties": {
+        "sequence_evidence_summary": {
+          "type": "object"
+        },
+        "distinctive_kernel_anchors": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "pattern_segments": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "span_alignment": {
+      "type": "object"
+    },
+    "artifact_promotion": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": true,
+  "oneOf": [
+    {
+      "$ref": "#/definitions/partialReview"
+    },
+    {
+      "$ref": "#/definitions/passedReview"
+    }
+  ],
+  "definitions": {
+    "rowsPayload": {
+      "type": "object",
+      "required": ["status", "row_count", "rows"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "minLength": 1
+        },
+        "row_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "graphAlignmentRow": {
+      "type": "object",
+      "required": [
+        "span_id",
+        "graph_operator_span_id",
+        "location_kind",
+        "operator_evidence_kind",
+        "requires_further_drilldown"
+      ],
+      "properties": {
+        "span_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "graph_operator_span_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "location_kind": {
+          "type": "string",
+          "enum": [
+            "operator_call",
+            "module_call_anchor",
+            "graph_replay_entry",
+            "constructor_line"
+          ]
+        },
+        "operator_evidence_kind": {
+          "type": "string",
+          "enum": [
+            "torch_call",
+            "torch_functional_call",
+            "torch_npu_call",
+            "npu_custom_op",
+            "triton_call",
+            "tensor_expression",
+            "collective_call",
+            "device_cache_op"
+          ]
+        },
+        "requires_further_drilldown": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": true
+    },
+    "graphAlignmentRowsPayload": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/rowsPayload"
+        },
+        {
+          "properties": {
+            "rows": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/graphAlignmentRow"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "repoFileEvidenceCheck": {
+      "type": "object",
+      "required": [
+        "checked_against_repo_divergence_report",
+        "existing_files_relied_on",
+        "missing_files_relied_on",
+        "contradictions"
+      ],
+      "properties": {
+        "checked_against_repo_divergence_report": {
+          "type": "boolean"
+        },
+        "existing_files_relied_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_files_relied_on": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "contradictions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "artifactPromotion": {
+      "type": "object",
+      "required": [
+        "graph_execution_plan_updates",
+        "graph_forward_context_updates",
+        "graph_span_candidates_payload",
+        "forward_segment_template_payload",
+        "graph_span_alignment_payload"
+      ],
+      "properties": {
+        "graph_execution_plan_updates": {
+          "type": "object"
+        },
+        "graph_forward_context_updates": {
+          "type": "object"
+        },
+        "graph_span_candidates_payload": {
+          "$ref": "#/definitions/rowsPayload"
+        },
+        "forward_segment_template_payload": {
+          "$ref": "#/definitions/rowsPayload"
+        },
+        "graph_span_alignment_payload": {
+          "$ref": "#/definitions/graphAlignmentRowsPayload"
+        }
+      },
+      "additionalProperties": true
+    },
+    "partialReview": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "partial"
+        },
+        "review_outcome": {
+          "const": "blocked"
+        },
+        "blocking_issues": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string"
+          }
+        },
+        "artifact_promotion": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/artifactPromotion"
+            },
+            {
+              "properties": {
+                "graph_execution_plan_updates": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": {
+                    "status": {
+                      "const": "partial"
+                    }
+                  }
+                },
+                "graph_forward_context_updates": {
+                  "type": "object",
+                  "required": ["status"],
+                  "properties": {
+                    "status": {
+                      "const": "partial"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "passedReview": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "const": "passed"
+        },
+        "review_outcome": {
+          "const": "approved"
+        },
+        "artifact_promotion": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/artifactPromotion"
+            },
+            {
+              "properties": {
+                "graph_span_alignment_payload": {
+                  "allOf": [
+                    {
+                      "$ref": "#/definitions/graphAlignmentRowsPayload"
+                    },
+                    {
+                      "properties": {
+                        "rows": {
+                          "type": "array",
+                          "items": {
+                            "allOf": [
+                              {
+                                "$ref": "#/definitions/graphAlignmentRow"
+                              },
+                              {
+                                "properties": {
+                                  "location_kind": {
+                                    "const": "operator_call"
+                                  },
+                                  "requires_further_drilldown": {
+                                    "const": false
+                                  }
+                                }
+                              }
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  }
+}

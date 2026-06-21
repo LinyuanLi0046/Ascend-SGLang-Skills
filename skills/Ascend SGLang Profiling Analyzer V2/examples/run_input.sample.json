@@ -1,0 +1,13 @@
+{
+  "task_id": "demo_replace_before_run",
+  "workspace_dir": "d:/Agent/workspace-demo",
+  "profiling_root_path": "d:/Agent/REPLACE_WITH_PROFILING_ROOT",
+  "window_start_ns": 1779432596611966000,
+  "window_end_ns": 1779432596612600000,
+  "code_repo_path": "d:/Agent/REPLACE_WITH_CODE_REPO",
+  "model_root_path": "d:/Agent/REPLACE_WITH_MODEL_ROOT",
+  "draft_model_root_path": "",
+  "launch_command_file": "",
+  "launch_command_text": "python -m sglang.launch_server --speculative-algorithm NEXTN --enable-npu-graph --graph --decode",
+  "supplemental_input_paths": []
+}

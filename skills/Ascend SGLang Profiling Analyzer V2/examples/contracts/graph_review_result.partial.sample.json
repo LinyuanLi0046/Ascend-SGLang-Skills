@@ -1,0 +1,115 @@
+{
+  "status": "partial",
+  "review_outcome": "blocked",
+  "reviewed_mapping_granularity": "per_span_forward_code",
+  "review_summary": "Most graph spans are aligned, but several operator calls still require drilldown.",
+  "blocking_issues": [
+    "verify phase still contains module_call_anchor entries.",
+    "draft_decode cache path needs one more repo-level confirmation."
+  ],
+  "knowledge_reference_check": {
+    "model_config_and_launch_fields_read": true,
+    "sglang_path_map_read": true,
+    "forward_analysis_rules_read": true,
+    "repo_and_profiling_override_acknowledged": true,
+    "notes": "Knowledge docs were used only as hints."
+  },
+  "rules_conformance_check": {
+    "checked_against_forward_analysis_rules": true,
+    "status": "partial",
+    "summary": "One path still stops at a module boundary.",
+    "violations": [
+      "verify span s_000031 still requires internal drilldown."
+    ]
+  },
+  "repo_file_evidence_check": {
+    "checked_against_repo_divergence_report": true,
+    "existing_files_relied_on": [
+      "python/sglang/srt/model_executor/model_runner.py"
+    ],
+    "missing_files_relied_on": [],
+    "contradictions": []
+  },
+  "path_reconstruction": {
+    "status": "partial",
+    "summary": "Forward path reconstructed through decoder and attention blocks.",
+    "sequence_evidence_summary": {
+      "ordered_operator_span_sequence_built": true,
+      "distinctive_anchor_count": 1,
+      "repetitive_segment_count": 1
+    },
+    "distinctive_kernel_anchors": [
+      {
+        "phase": "verify",
+        "graph_operator_span_id": "graph_operator_span_00001",
+        "anchor_kind": "distinctive_kernel"
+      }
+    ],
+    "pattern_segments": [
+      {
+        "phase": "verify",
+        "segment_id": "verify_seg_0001",
+        "pattern_kind": "repetitive_operator_sequence"
+      }
+    ]
+  },
+  "span_alignment": {
+    "status": "partial",
+    "row_count": 1,
+    "rows": [
+      {
+        "span_id": "s_000031",
+        "graph_operator_span_id": "graph_operator_span_00001",
+        "location_kind": "module_call_anchor",
+        "operator_evidence_kind": "torch_call",
+        "requires_further_drilldown": true
+      }
+    ]
+  },
+  "artifact_promotion": {
+    "graph_execution_plan_updates": {
+      "status": "partial",
+      "mapping_granularity": "per_span_forward_code",
+      "identified_graph_span_ids": [
+        "s_000031"
+      ]
+    },
+    "graph_forward_context_updates": {
+      "status": "partial",
+      "mapping_granularity": "per_span_forward_code"
+    },
+    "graph_span_candidates_payload": {
+      "status": "partial",
+      "row_count": 1,
+      "rows": [
+        {
+          "phase": "verify",
+          "span_id": "s_000031"
+        }
+      ]
+    },
+    "forward_segment_template_payload": {
+      "status": "partial",
+      "row_count": 1,
+      "rows": [
+        {
+          "phase": "verify",
+          "template_id": "verify_0001"
+        }
+      ]
+    },
+    "graph_span_alignment_payload": {
+      "status": "partial",
+      "row_count": 1,
+      "rows": [
+        {
+          "span_id": "s_000031",
+          "graph_operator_span_id": "graph_operator_span_00001",
+          "location_kind": "module_call_anchor",
+          "operator_evidence_kind": "torch_call",
+          "requires_further_drilldown": true
+        }
+      ]
+    }
+  }
+}
