@@ -44,12 +44,12 @@ def discover_inputs_for_workspace(workspace_dir: Path) -> dict:
         raise FileNotFoundError("至少需要一份 op_summary_*.csv")
 
     input_contract = {
-        "profiling_root": str(profiling_root),
+        "profiling_root_path": str(profiling_root),
         "window_start_ns": int(state["inputs"]["window_start_ns"]),
         "window_end_ns": int(state["inputs"]["window_end_ns"]),
-        "code_repo_root": state["inputs"]["code_repo_path"],
-        "model_root": state["inputs"]["model_root_path"],
-        "draft_model_root": state["inputs"].get("draft_model_root_path", ""),
+        "code_repo_path": state["inputs"]["code_repo_path"],
+        "model_root_path": state["inputs"]["model_root_path"],
+        "draft_model_root_path": state["inputs"].get("draft_model_root_path", ""),
         "launch_command_file": state["inputs"]["launch_command_file"],
         "input_resolution_path": str(workspace_dir / "input" / "input_resolution.json"),
         "p0_mode": "graph_decode_spec_v2",

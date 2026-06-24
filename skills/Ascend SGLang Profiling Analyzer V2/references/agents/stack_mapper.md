@@ -9,7 +9,9 @@
 ## 2. 你的职责边界
 
 - 你只负责 Step 4 的正式 graph 外代码定位结果。
+- 你对应的是 Step 4B，不是 Step 4A。
 - 你必须基于 `Call Stack` / `python tracer` / `timeline` 证据，在 `external_mapping_targets.json` 已冻结的封闭集合内，为 graph 外且不排除的 span 生成正式代码定位结果。
+- 你必须把 `output/step4_bootstrap_result.json` 当作 Step 4A 已完成的正式收据；若该收据缺失、状态不是 `passed`，或 ready set 不完整，你不能把自己当成 bootstrap owner。
 - `graph 外 / graph 内` 已在 shared deterministic freeze 阶段完成冻结；你不能重新定义，也不能把上下文文件里的其他 span 拉回正式 target 集。
 - `graph_phase_stack_evidence.json`、`graph_execution_plan.json`、`graph_mapping_targets.json` 属于 shared graph scope 工件，不是你的正式输出。
 - 你禁止替代 Step 5 的 graph replay 逐 span 映射职责。
@@ -33,6 +35,7 @@
 
 - `input/stack_mapping_task.json`
 - `artifacts/mapping/stack_evidence.json`
+- `output/step4_bootstrap_result.json`
 - `artifacts/mapping/stack_call_paths.json`
 - `artifacts/mapping/external_mapping_targets.json`
 - `artifacts/stacks/python_tracer_index.json`
@@ -78,16 +81,17 @@
 ## 6. 你的工作流程
 
 1. 先读 `stack_mapping_task.json`，确认范围只限 Step 4。
-2. 先读 `references/shared/stack_mapping_rules.md` 与 `references/shared/stream_classification_rules.md`，再开始正式分析。
-3. 再读 `external_mapping_targets.json`，把它当作 Step 4 唯一允许输出正式 graph 外 mapping row 的封闭 target set。
-4. 再读 `stack_call_paths.json` 与 `python_tracer_index.json`，把完整 repo 调用链、`file_function_candidates`、`code_line_candidates` 与 tracer 命中当成增强证据层。
-5. 再读 `stack_evidence.json`，把它当成候选证据层，而不是正式 target 定义层。
-6. 再读 `classified_spans.json` 与 `timeline_index.json`，用于理解 stream/scope 语义和左右文，但不得把新 span 加回正式 target set。
-7. 对每个 graph 外 span 分两步处理：
-8. 第一步，确认该 span 最可能落在哪个 repo 内 `文件:函数`，即 `primary_file_function`。
-9. 第二步，结合 span 语义、左右 span、`parallel_group`、相邻 span 的代码位置分布，从同函数或相邻候选中的 `code_line_candidates` 里正式选出 `code_location`。
-10. 先写正式 JSON，再写 Markdown 报告。
-11. 除正式输出外，不要新增其他结果文件。
+2. 先确认 `step4_bootstrap_result.json.status=passed`，并把它视为 Step 4A 已经完成 Step4 bootstrap freeze 的正式证明。
+3. 先读 `references/shared/stack_mapping_rules.md` 与 `references/shared/stream_classification_rules.md`，再开始正式分析。
+4. 再读 `external_mapping_targets.json`，把它当作 Step 4 唯一允许输出正式 graph 外 mapping row 的封闭 target set。
+5. 再读 `stack_call_paths.json` 与 `python_tracer_index.json`，把完整 repo 调用链、`file_function_candidates`、`code_line_candidates` 与 tracer 命中当成增强证据层。
+6. 再读 `stack_evidence.json`，把它当成候选证据层，而不是正式 target 定义层。
+7. 再读 `classified_spans.json` 与 `timeline_index.json`，用于理解 stream/scope 语义和左右文，但不得把新 span 加回正式 target set。
+8. 对每个 graph 外 span 分两步处理：
+9. 第一步，确认该 span 最可能落在哪个 repo 内 `文件:函数`，即 `primary_file_function`。
+10. 第二步，结合 span 语义、左右 span、`parallel_group`、相邻 span 的代码位置分布，从同函数或相邻候选中的 `code_line_candidates` 里正式选出 `code_location`。
+11. 先写正式 JSON，再写 Markdown 报告。
+12. 除正式输出外，不要新增其他结果文件。
 
 ## 6.1 graph 外分析口径
 
@@ -158,19 +162,16 @@
 主 agent 会先运行：
 
 - `scripts/pre_step_check.py --step 4`
-- `scripts/build_stack_evidence.py`
-- `scripts/build_graph_phase_stack_evidence.py`
-- `scripts/classify_graph_groups.py`
-- `scripts/build_graph_mapping_targets.py`
-- `scripts/build_external_mapping_targets.py`
-- `scripts/build_stack_call_paths.py`
 - `scripts/prepare_agent_dispatch.py --agent-name stack_mapper`
+
+当前 `stack_mapper` 对应的是 Step 4B。`prepare_agent_dispatch.py --agent-name stack_mapper` 现在只做轻校验：它只检查 Step 4A 的 `step4_bootstrap_result.json` 是否已经 finalize，及其 ready set 是否完整；它不再托管 `run_step4_bootstrap_pipeline.py`，也不再等待 wrapper。若 Step 4A 尚未完成，主 agent 必须回到 `step4_bootstrap_runner`，而不是手工拆跑 Step4 bootstrap 脚本。
 
 你返回后，主 agent 会运行：
 
-- `scripts/record_subagent_completion.py --agent-name stack_mapper`
+- `scripts/record_subagent_completion.py --agent-name stack_mapper --task-call-id <task_agent_id>`
 - `scripts/finalize_agent_dispatch.py --agent-name stack_mapper`
-- `scripts/mark_step_complete.py --step 4`
+- 至少更新 `findings.md` 或 `progress.md`；若 `state.flags.task_plan_refresh_required=true`，还要同步更新 `task_plan.md`
+- `scripts/mark_step_complete.py --step 4 --substep B`
 
 ## 8. 附录索引
 

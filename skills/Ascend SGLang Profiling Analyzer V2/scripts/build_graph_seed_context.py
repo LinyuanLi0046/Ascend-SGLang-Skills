@@ -43,12 +43,34 @@ def _normalized_graph_mapping_target_ids(graph_mapping_targets: dict[str, Any]) 
     return [str(row.get("span_id", "")).strip() for row in rows if isinstance(row, dict) and str(row.get("span_id", "")).strip()]
 
 
+def _load_preferred_stack_evidence(state: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    artifacts = state.get("artifacts", {})
+    for artifact_key in ("stack_evidence_lite_path", "stack_evidence_path"):
+        candidate_path = str(artifacts.get(artifact_key, "")).strip()
+        payload = _safe_load_json(candidate_path)
+        if payload:
+            return candidate_path, payload
+    return "", {}
+
+
+def _stack_row_count(stack_evidence: dict[str, Any]) -> int:
+    summary = stack_evidence.get("summary", {})
+    if isinstance(summary, dict):
+        count = summary.get("op_stack_row_count")
+        try:
+            return int(count or 0)
+        except (TypeError, ValueError):
+            pass
+    rows = stack_evidence.get("rows", [])
+    return len(rows) if isinstance(rows, list) else 0
+
+
 def build_graph_seed_context_for_workspace(workspace_dir: Path) -> dict[str, Any]:
     state = load_state(workspace_dir)
     skill_dir = Path(state["skill_dir"])
     classified = _safe_load_json(str(state["artifacts"].get("classified_spans_path", "")))
     timeline_index = _safe_load_json(str(state["artifacts"].get("timeline_index_path", "")))
-    stack_evidence = _safe_load_json(str(state["artifacts"].get("stack_evidence_path", "")))
+    stack_evidence_path, stack_evidence = _load_preferred_stack_evidence(state)
     graph_phase_stack_evidence = _safe_load_json(str(state["artifacts"].get("graph_phase_stack_evidence_path", "")))
     graph_plan = _safe_load_json(str(state["artifacts"].get("graph_execution_plan_path", "")))
     graph_mapping_targets = _safe_load_json(str(state["artifacts"].get("graph_mapping_targets_path", "")))
@@ -92,6 +114,7 @@ def build_graph_seed_context_for_workspace(workspace_dir: Path) -> dict[str, Any
         "knowledge_files": knowledge_files,
         "runtime_constraints_path": str(state["artifacts"].get("runtime_constraints_path", "")),
         "repo_divergence_report_path": str(state["artifacts"].get("repo_divergence_report_path", "")),
+        "stack_evidence_path": stack_evidence_path,
         "graph_phase_stack_evidence_path": str(state["artifacts"].get("graph_phase_stack_evidence_path", "")),
         "phase_candidates": runtime_constraints.get("phase_candidates", []),
         "resolved_model_family": runtime_constraints.get("resolved_model_family", ""),
@@ -126,7 +149,7 @@ def build_graph_seed_context_for_workspace(workspace_dir: Path) -> dict[str, Any
         "profiling_evidence_summary": {
             "task_count": len(timeline_index.get("tasks", [])),
             "op_count": len(timeline_index.get("ops", [])),
-            "stack_row_count": len(stack_evidence.get("rows", [])),
+            "stack_row_count": _stack_row_count(stack_evidence),
             "graph_phase_stack_row_count": len(graph_phase_stack_evidence.get("rows", [])),
         },
         "notes": [

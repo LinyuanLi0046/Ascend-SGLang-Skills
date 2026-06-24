@@ -20,7 +20,7 @@
   "repo_file_evidence_check": {
     "checked_against_repo_divergence_report": true,
     "existing_files_relied_on": [
-      "python/sglang/srt/model_executor/model_runner.py"
+      "REPLACE_WITH_REAL_REPO_FILE.py"
     ],
     "missing_files_relied_on": [],
     "contradictions": []
@@ -35,30 +35,67 @@
     },
     "distinctive_kernel_anchors": [
       {
-        "phase": "verify",
-        "graph_operator_span_id": "graph_operator_span_00001",
+        "phase": "phase_a",
+        "graph_operator_span_id": "graph_operator_span_x",
         "anchor_kind": "distinctive_kernel"
       }
     ],
     "pattern_segments": [
       {
-        "phase": "verify",
-        "segment_id": "verify_seg_0001",
+        "phase": "phase_a",
+        "segment_id": "segment_x",
         "pattern_kind": "repetitive_operator_sequence"
       }
     ]
   },
+  "decision_templates": [
+    {
+      "template_key": "template_a",
+      "phase_basis": "Explain why the current rows belong to this phase.",
+      "model_role_basis": "Explain why the rows map to the selected model role.",
+      "backend_basis": "Explain why the path narrows to the selected backend or helper file.",
+      "branch_basis": "Explain why the local branch selection lands on the chosen final operator line.",
+      "candidate_code_locations": [
+        {
+          "code_location": "REPLACE_WITH_REAL_REPO_FILE.py:123",
+          "kind": "operator_call",
+          "why_possible": "Primary candidate that matches the selected branch."
+        },
+        {
+          "code_location": "REPLACE_WITH_REAL_REPO_FILE.py:129",
+          "kind": "operator_call",
+          "why_possible": "Nearby alternative candidate in the same local decision area."
+        }
+      ],
+      "selected_code_location": "REPLACE_WITH_REAL_REPO_FILE.py:123",
+      "selected_source_line_text": "result = backend_operator_call(...)",
+      "rejected_candidates": [
+        {
+          "code_location": "REPLACE_WITH_REAL_REPO_FILE.py:129",
+          "rejection_reason": "This candidate does not match the selected branch or ordered operator evidence."
+        }
+      ],
+      "why_selected": "This line is the only final operator call consistent with the current template-level evidence.",
+      "affected_span_count": 1,
+      "example_span_ids": [
+        "span_x"
+      ]
+    }
+  ],
   "span_alignment": {
     "status": "passed",
     "row_count": 1,
     "rows": [
       {
-        "span_id": "s_000031",
-        "graph_operator_span_id": "graph_operator_span_00001",
+        "span_id": "span_x",
+        "graph_operator_span_id": "graph_operator_span_x",
         "location_kind": "operator_call",
-        "operator_evidence_kind": "torch_npu_call",
+        "operator_evidence_kind": "torch_call",
         "requires_further_drilldown": false,
-        "code_location": "python/sglang/srt/model_executor/model_runner.py:241"
+        "code_location": "REPLACE_WITH_REAL_REPO_FILE.py:123",
+        "code_location_human": "REPLACE_WITH_REAL_REPO_FILE.py:123 -> final operator call",
+        "template_key": "template_a",
+        "selected_source_line_text": "result = backend_operator_call(...)"
       }
     ]
   },
@@ -67,7 +104,7 @@
       "status": "passed",
       "mapping_granularity": "per_span_forward_code",
       "identified_graph_span_ids": [
-        "s_000031"
+        "span_x"
       ]
     },
     "graph_forward_context_updates": {
@@ -79,8 +116,8 @@
       "row_count": 1,
       "rows": [
         {
-          "phase": "verify",
-          "span_id": "s_000031"
+          "phase": "phase_a",
+          "span_id": "span_x"
         }
       ]
     },
@@ -89,8 +126,8 @@
       "row_count": 1,
       "rows": [
         {
-          "phase": "verify",
-          "template_id": "verify_0001"
+          "phase": "phase_a",
+          "template_id": "template_group_a"
         }
       ]
     },
@@ -99,12 +136,15 @@
       "row_count": 1,
       "rows": [
         {
-          "span_id": "s_000031",
-          "graph_operator_span_id": "graph_operator_span_00001",
+          "span_id": "span_x",
+          "graph_operator_span_id": "graph_operator_span_x",
           "location_kind": "operator_call",
-          "operator_evidence_kind": "torch_npu_call",
+          "operator_evidence_kind": "torch_call",
           "requires_further_drilldown": false,
-          "code_location": "python/sglang/srt/model_executor/model_runner.py:241"
+          "code_location": "REPLACE_WITH_REAL_REPO_FILE.py:123",
+          "code_location_human": "REPLACE_WITH_REAL_REPO_FILE.py:123 -> final operator call",
+          "template_key": "template_a",
+          "selected_source_line_text": "result = backend_operator_call(...)"
         }
       ]
     }

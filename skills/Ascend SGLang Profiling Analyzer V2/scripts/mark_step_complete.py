@@ -5,13 +5,20 @@ from pathlib import Path
 
 from workflow_common import (
     compute_sha256,
+    collect_graph_mapping_target_ids,
+    collect_graph_operator_span_ids,
     document_hashes,
+    effective_substep,
+    extract_graph_alignment_rows,
+    graph_source_line_violation,
     load_json,
     load_provenance_manifest,
     load_state,
+    normalize_substep,
     now_iso,
     required_step,
     save_state,
+    validate_code_location,
     write_error_context,
 )
 
@@ -32,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="标记某个 step 已完成。")
     parser.add_argument("--workspace-dir", required=True)
     parser.add_argument("--step", required=True, type=int)
+    parser.add_argument("--substep", default="")
     return parser
 
 
@@ -61,12 +69,17 @@ def ensure_non_empty_rows_artifact(path_str: str, label: str) -> None:
     ensure(rows, f"{label}.rows 不能为空；空 formal target / alignment 工件不得推进 step。")
 
 
-def extract_graph_alignment_items(payload: dict) -> list[dict]:
-    for key in ("items", "rows"):
-        value = payload.get(key, [])
-        if isinstance(value, list):
-            return [item for item in value if isinstance(item, dict)]
-    return []
+def resolve_requested_substep(state: dict, step: int, requested_substep: str) -> str:
+    requested = normalize_substep(requested_substep)
+    effective = effective_substep(state, step)
+    if step not in {4, 5}:
+        ensure(not requested, "--substep 目前只允许用于 Step 4/5。")
+        return ""
+    ensure(effective in {"A", "B"}, f"Step {step} 当前缺少有效 current_substep。")
+    if requested:
+        ensure(requested == effective, f"当前 Step {step} 允许完成的 substep={effective}，不是 {requested}。")
+        return requested
+    return effective
 
 
 def collect_step5_step6_readiness_issues(state: dict) -> list[str]:
@@ -78,18 +91,9 @@ def collect_step5_step6_readiness_issues(state: dict) -> list[str]:
     graph_span_alignment = load_json(Path(artifacts["graph_span_alignment_path"]))
 
     graph_mapping_target_rows = graph_mapping_targets.get("rows", [])
-    frozen_graph_span_ids = {
-        str(row.get("span_id", "")).strip()
-        for row in graph_mapping_target_rows
-        if isinstance(row, dict) and str(row.get("span_id", "")).strip()
-    }
-    operator_span_rows = graph_operator_spans.get("rows", [])
-    operator_span_ids = {
-        str(row.get("graph_operator_span_id", "")).strip()
-        for row in operator_span_rows
-        if isinstance(row, dict) and str(row.get("graph_operator_span_id", "")).strip()
-    }
-    alignment_items = extract_graph_alignment_items(graph_span_alignment)
+    frozen_graph_span_ids = collect_graph_mapping_target_ids(graph_mapping_targets)
+    operator_span_ids = collect_graph_operator_span_ids(graph_operator_spans)
+    alignment_items = extract_graph_alignment_rows(graph_span_alignment)
     alignment_span_ids = {
         str(item.get("span_id", "")).strip()
         for item in alignment_items
@@ -97,6 +101,7 @@ def collect_step5_step6_readiness_issues(state: dict) -> list[str]:
     }
 
     issues: list[str] = []
+    repo_root = Path(str(state.get("inputs", {}).get("code_repo_path", "")).strip())
     if graph_plan.get("mapping_granularity") != "per_span_forward_code":
         issues.append("graph_execution_plan.mapping_granularity 仍不是 per_span_forward_code。")
     if graph_forward_context.get("mapping_granularity") != "per_span_forward_code":
@@ -134,6 +139,15 @@ def collect_step5_step6_readiness_issues(state: dict) -> list[str]:
             issues.append(f"{row_path}.requires_further_drilldown 必须为 false，当前为 {requires_further_drilldown!r}")
         if operator_evidence_kind not in ALLOWED_OPERATOR_EVIDENCE_KINDS:
             issues.append(f"{row_path}.operator_evidence_kind 非法或缺失: {operator_evidence_kind or '<missing>'}")
+        code_location = str(item.get("code_location", "")).strip()
+        if not code_location:
+            issues.append(f"{row_path}.code_location 缺失。")
+        elif not validate_code_location(code_location):
+            issues.append(f"{row_path}.code_location 非法: {code_location}")
+        else:
+            violation = graph_source_line_violation(code_location, repo_root)
+            if violation:
+                issues.append(f"{row_path}.code_location 仍停在 {violation}: {code_location}")
     return issues
 
 
@@ -177,18 +191,25 @@ def ensure_agent_status(workspace_dir: Path, state: dict, agent_name: str, allow
     ensure(index_jsonl.exists(), "缺少 agent 调用审计索引 index.jsonl。")
 
 
-def ensure_state_consistency(workspace_dir: Path, state: dict, step: int) -> None:
+def ensure_state_consistency(workspace_dir: Path, state: dict, step: int, substep: str) -> None:
     flags = state.get("flags", {})
     orchestration = state.get("orchestration", {})
-    expected_finalize_agent = {
-        1: "profiling_preprocessor",
-        2: "profiling_preprocessor",
-        3: "timeline_analyst",
-        4: "stack_mapper",
-        5: "graph_path_analyst",
-        6: "artifact_renderer",
-        7: "artifact_validator",
-    }.get(step, "")
+    if step == 4 and substep == "A":
+        expected_finalize_agent = "step4_bootstrap_runner"
+    elif step == 4 and substep == "B":
+        expected_finalize_agent = "stack_mapper"
+    elif step == 5 and substep == "A":
+        expected_finalize_agent = "graph_bootstrap_runner"
+    elif step == 5 and substep == "B":
+        expected_finalize_agent = "graph_path_analyst"
+    else:
+        expected_finalize_agent = {
+            1: "profiling_preprocessor",
+            2: "profiling_preprocessor",
+            3: "timeline_analyst",
+            6: "artifact_renderer",
+            7: "artifact_validator",
+        }.get(step, "")
     if expected_finalize_agent:
         ensure(
             str(orchestration.get("last_finalize_agent", "")).strip() == expected_finalize_agent,
@@ -212,20 +233,57 @@ def ensure_state_consistency(workspace_dir: Path, state: dict, step: int) -> Non
     ensure(not bool(orchestration.get("illegal_temp_script_detected")), "检测到非法临时脚本污染，禁止推进 step。")
 
 
-def ensure_provenance_consistency(workspace_dir: Path, state: dict, step: int) -> None:
+def ensure_provenance_consistency(workspace_dir: Path, state: dict, step: int, substep: str) -> None:
     manifest = load_provenance_manifest(workspace_dir)
     artifacts_manifest = manifest.get("artifacts", {})
     artifacts = state.get("artifacts", {})
     required_keys_by_step = {
         1: ["trace_slice_path", "kernel_slice_path", "operator_slice_path", "task_time_slice_path", "op_summary_slice_path", "python_tracer_index_path"],
         2: ["timeline_index_path"],
-        3: ["classified_spans_path"],
-        4: ["stack_evidence_path", "stack_evidence_lite_path", "stack_call_paths_path", "external_mapping_targets_path", "external_span_mapping_path", "graph_phase_stack_evidence_path"],
-        5: ["graph_execution_plan_path", "graph_mapping_targets_path", "graph_forward_context_path", "graph_operator_spans_path", "graph_span_candidates_path", "forward_segment_template_path", "graph_span_alignment_path"],
+        3: ["classified_spans_path", "scope_gate_result_path"],
+        5: ["graph_bootstrap_result_path", "graph_execution_plan_path", "graph_mapping_targets_path", "graph_forward_context_path", "graph_seed_context_path", "graph_operator_spans_path", "graph_span_candidates_path", "forward_segment_template_path", "graph_span_alignment_path"],
         6: ["span_code_mapping_path", "annotated_trace_path", "stream_span_timeline_path"],
         7: ["validation_result_path"],
     }
-    for artifact_key in required_keys_by_step.get(step, []):
+    if step == 4 and substep == "A":
+        required_keys = [
+            "step4_bootstrap_result_path",
+            "repo_divergence_report_path",
+            "runtime_constraints_path",
+            "stack_evidence_path",
+            "stack_evidence_lite_path",
+            "stack_call_paths_path",
+            "external_mapping_targets_path",
+            "graph_phase_stack_evidence_path",
+            "graph_execution_plan_path",
+            "graph_mapping_targets_path",
+        ]
+    elif step == 4 and substep == "B":
+        required_keys = [
+            "step4_bootstrap_result_path",
+            "stack_evidence_path",
+            "stack_evidence_lite_path",
+            "stack_call_paths_path",
+            "external_mapping_targets_path",
+            "external_span_mapping_path",
+            "graph_phase_stack_evidence_path",
+        ]
+    else:
+        required_keys = list(required_keys_by_step.get(step, []))
+    if step == 5 and substep == "A":
+        required_keys = [
+            "graph_bootstrap_result_path",
+            "graph_execution_plan_path",
+            "graph_mapping_targets_path",
+            "graph_forward_context_path",
+            "graph_seed_context_path",
+            "graph_operator_spans_path",
+        ]
+    elif step == 5:
+        graph_path_status = str(state.get("agents", {}).get("graph_path_analyst", {}).get("last_status", "")).strip()
+        if graph_path_status != "passed":
+            required_keys = [key for key in required_keys if key != "graph_span_alignment_path"]
+    for artifact_key in required_keys:
         raw_path = str(artifacts.get(artifact_key, "")).strip()
         ensure(raw_path, f"{artifact_key} 缺少正式路径，无法校验 provenance。")
         path = Path(raw_path)
@@ -237,7 +295,7 @@ def ensure_provenance_consistency(workspace_dir: Path, state: dict, step: int) -
         ensure(str(entry.get("sha256", "")).strip() == compute_sha256(path), f"{label} 在 finalize 之后发生了修改。")
 
 
-def step_requirements(workspace_dir: Path, state: dict, step: int) -> None:
+def step_requirements(workspace_dir: Path, state: dict, step: int, substep: str) -> None:
     flags = state["flags"]
     artifacts = state["artifacts"]
     output_dir = workspace_dir / "output"
@@ -260,41 +318,85 @@ def step_requirements(workspace_dir: Path, state: dict, step: int) -> None:
         ensure_agent_status(workspace_dir, state, "profiling_preprocessor", {"passed"})
     elif step == 3:
         ensure(flags["classification_done"], "Step 3 需要 classification_done=true。")
+        ensure(flags["hardware_scope_classified"], "Step 3 需要 hardware_scope_classified=true。")
+        ensure(flags["scope_gate_passed"], "Step 3 需要 scope_gate_passed=true。")
         ensure_artifact(artifacts["classified_spans_path"], "classified_spans_path")
+        ensure_artifact(artifacts["scope_gate_result_path"], "scope_gate_result_path")
+        ensure((output_dir / "timeline_review_patch.json").exists(), "缺少 timeline_review_patch.json。")
         ensure((output_dir / "timeline_analysis.json").exists(), "缺少 timeline_analysis.json。")
         ensure_agent_status(workspace_dir, state, "timeline_analyst", {"passed"})
     elif step == 4:
-        ensure(flags["stack_evidence_built"], "Step 4 需要 stack_evidence_built=true。")
-        ensure(flags["stack_call_paths_built"], "Step 4 需要 stack_call_paths_built=true。")
-        ensure(flags["external_mapping_targets_built"], "Step 4 需要 external_mapping_targets_built=true。")
-        ensure(flags["external_span_mapping_built"], "Step 4 需要 external_span_mapping_built=true。")
-        ensure(flags["graph_phase_stack_evidence_built"], "Step 4 需要 graph_phase_stack_evidence_built=true。")
-        ensure_artifact(artifacts["stack_evidence_path"], "stack_evidence_path")
-        ensure_artifact(artifacts["stack_call_paths_path"], "stack_call_paths_path")
-        ensure_artifact(artifacts["external_mapping_targets_path"], "external_mapping_targets_path")
-        ensure_artifact(artifacts["external_span_mapping_path"], "external_span_mapping_path")
-        ensure_artifact(artifacts["graph_phase_stack_evidence_path"], "graph_phase_stack_evidence_path")
-        ensure((output_dir / "stack_mapping_result.json").exists(), "缺少 stack_mapping_result.json。")
-        ensure_agent_status(workspace_dir, state, "stack_mapper", {"passed", "partial"})
+        if substep == "A":
+            ensure(flags["repo_divergence_checked"], "Step 4A 需要 repo_divergence_checked=true。")
+            ensure(flags["runtime_constraints_built"], "Step 4A 需要 runtime_constraints_built=true。")
+            ensure(flags["stack_evidence_built"], "Step 4A 需要 stack_evidence_built=true。")
+            ensure(flags["stack_call_paths_built"], "Step 4A 需要 stack_call_paths_built=true。")
+            ensure(flags["external_mapping_targets_built"], "Step 4A 需要 external_mapping_targets_built=true。")
+            ensure(flags["graph_phase_stack_evidence_built"], "Step 4A 需要 graph_phase_stack_evidence_built=true。")
+            ensure(flags["graph_mapping_targets_built"], "Step 4A 需要 graph_mapping_targets_built=true。")
+            ensure_artifact(artifacts["step4_bootstrap_result_path"], "step4_bootstrap_result_path")
+            ensure_artifact(artifacts["repo_divergence_report_path"], "repo_divergence_report_path")
+            ensure_artifact(artifacts["runtime_constraints_path"], "runtime_constraints_path")
+            ensure_artifact(artifacts["stack_evidence_path"], "stack_evidence_path")
+            ensure_artifact(artifacts["stack_evidence_lite_path"], "stack_evidence_lite_path")
+            ensure_artifact(artifacts["stack_call_paths_path"], "stack_call_paths_path")
+            ensure_artifact(artifacts["external_mapping_targets_path"], "external_mapping_targets_path")
+            ensure_artifact(artifacts["graph_phase_stack_evidence_path"], "graph_phase_stack_evidence_path")
+            ensure_artifact(artifacts["graph_execution_plan_path"], "graph_execution_plan_path")
+            ensure_artifact(artifacts["graph_mapping_targets_path"], "graph_mapping_targets_path")
+            ensure((output_dir / "step4_bootstrap_result.json").exists(), "缺少 step4_bootstrap_result.json。")
+            ensure_agent_status(workspace_dir, state, "step4_bootstrap_runner", {"passed"})
+        else:
+            ensure(flags["stack_evidence_built"], "Step 4B 需要 stack_evidence_built=true。")
+            ensure(flags["stack_call_paths_built"], "Step 4B 需要 stack_call_paths_built=true。")
+            ensure(flags["external_mapping_targets_built"], "Step 4B 需要 external_mapping_targets_built=true。")
+            ensure(flags["external_span_mapping_built"], "Step 4B 需要 external_span_mapping_built=true。")
+            ensure(flags["graph_phase_stack_evidence_built"], "Step 4B 需要 graph_phase_stack_evidence_built=true。")
+            ensure_artifact(artifacts["step4_bootstrap_result_path"], "step4_bootstrap_result_path")
+            ensure_artifact(artifacts["stack_evidence_path"], "stack_evidence_path")
+            ensure_artifact(artifacts["stack_call_paths_path"], "stack_call_paths_path")
+            ensure_artifact(artifacts["external_mapping_targets_path"], "external_mapping_targets_path")
+            ensure_artifact(artifacts["external_span_mapping_path"], "external_span_mapping_path")
+            ensure_artifact(artifacts["graph_phase_stack_evidence_path"], "graph_phase_stack_evidence_path")
+            ensure((output_dir / "stack_mapping_result.json").exists(), "缺少 stack_mapping_result.json。")
+            ensure_agent_status(workspace_dir, state, "stack_mapper", {"passed", "partial"})
     elif step == 5:
-        ensure(flags["graph_path_built"], "Step 5 需要 graph_path_built=true。")
-        ensure(flags.get("graph_mapping_targets_built"), "Step 5 需要 graph_mapping_targets_built=true。")
-        ensure(flags["graph_forward_context_built"], "Step 5 需要 graph_forward_context_built=true。")
-        ensure(flags["graph_operator_spans_built"], "Step 5 需要 graph_operator_spans_built=true。")
-        ensure(flags["graph_span_identified"], "Step 5 需要 graph_span_identified=true。")
-        ensure(flags["forward_segment_template_built"], "Step 5 需要 forward_segment_template_built=true。")
-        ensure(flags["graph_span_alignment_built"], "Step 5 需要 graph_span_alignment_built=true。")
-        ensure_artifact(artifacts["graph_execution_plan_path"], "graph_execution_plan_path")
-        ensure_artifact(artifacts["graph_mapping_targets_path"], "graph_mapping_targets_path")
-        ensure_artifact(artifacts["graph_forward_context_path"], "graph_forward_context_path")
-        ensure_artifact(artifacts["graph_operator_spans_path"], "graph_operator_spans_path")
-        ensure_artifact(artifacts["graph_span_candidates_path"], "graph_span_candidates_path")
-        ensure_artifact(artifacts["forward_segment_template_path"], "forward_segment_template_path")
-        ensure_artifact(artifacts["graph_span_alignment_path"], "graph_span_alignment_path")
-        ensure_non_empty_rows_artifact(artifacts["graph_mapping_targets_path"], "graph_mapping_targets_path")
-        ensure_non_empty_rows_artifact(artifacts["graph_operator_spans_path"], "graph_operator_spans_path")
-        ensure_non_empty_rows_artifact(artifacts["graph_span_alignment_path"], "graph_span_alignment_path")
-        ensure_agent_status(workspace_dir, state, "graph_path_analyst", {"passed", "partial"})
+        if substep == "A":
+            ensure(flags.get("graph_mapping_targets_built"), "Step 5A 需要 graph_mapping_targets_built=true。")
+            ensure(flags["graph_forward_context_built"], "Step 5A 需要 graph_forward_context_built=true。")
+            ensure(flags["graph_seed_context_built"], "Step 5A 需要 graph_seed_context_built=true。")
+            ensure(flags["graph_operator_spans_built"], "Step 5A 需要 graph_operator_spans_built=true。")
+            ensure_artifact(artifacts["graph_bootstrap_result_path"], "graph_bootstrap_result_path")
+            ensure_artifact(artifacts["graph_execution_plan_path"], "graph_execution_plan_path")
+            ensure_artifact(artifacts["graph_mapping_targets_path"], "graph_mapping_targets_path")
+            ensure_artifact(artifacts["graph_forward_context_path"], "graph_forward_context_path")
+            ensure_artifact(artifacts["graph_seed_context_path"], "graph_seed_context_path")
+            ensure_artifact(artifacts["graph_operator_spans_path"], "graph_operator_spans_path")
+            ensure_non_empty_rows_artifact(artifacts["graph_mapping_targets_path"], "graph_mapping_targets_path")
+            ensure_non_empty_rows_artifact(artifacts["graph_operator_spans_path"], "graph_operator_spans_path")
+            ensure_agent_status(workspace_dir, state, "graph_bootstrap_runner", {"passed"})
+        else:
+            graph_path_status = str(state.get("agents", {}).get("graph_path_analyst", {}).get("last_status", "")).strip()
+            ensure(flags.get("graph_mapping_targets_built"), "Step 5B 需要 graph_mapping_targets_built=true。")
+            ensure(flags["graph_forward_context_built"], "Step 5B 需要 graph_forward_context_built=true。")
+            ensure(flags["graph_operator_spans_built"], "Step 5B 需要 graph_operator_spans_built=true。")
+            ensure(flags["graph_span_identified"], "Step 5B 需要 graph_span_identified=true。")
+            ensure(flags["forward_segment_template_built"], "Step 5B 需要 forward_segment_template_built=true。")
+            ensure_artifact(artifacts["graph_bootstrap_result_path"], "graph_bootstrap_result_path")
+            ensure_artifact(artifacts["graph_execution_plan_path"], "graph_execution_plan_path")
+            ensure_artifact(artifacts["graph_mapping_targets_path"], "graph_mapping_targets_path")
+            ensure_artifact(artifacts["graph_forward_context_path"], "graph_forward_context_path")
+            ensure_artifact(artifacts["graph_seed_context_path"], "graph_seed_context_path")
+            ensure_artifact(artifacts["graph_operator_spans_path"], "graph_operator_spans_path")
+            ensure_artifact(artifacts["graph_span_candidates_path"], "graph_span_candidates_path")
+            ensure_artifact(artifacts["forward_segment_template_path"], "forward_segment_template_path")
+            ensure_non_empty_rows_artifact(artifacts["graph_mapping_targets_path"], "graph_mapping_targets_path")
+            ensure_non_empty_rows_artifact(artifacts["graph_operator_spans_path"], "graph_operator_spans_path")
+            if graph_path_status == "passed":
+                ensure(flags["graph_span_alignment_built"], "Step 5B status=passed 时需要 graph_span_alignment_built=true。")
+                ensure_artifact(artifacts["graph_span_alignment_path"], "graph_span_alignment_path")
+                ensure_non_empty_rows_artifact(artifacts["graph_span_alignment_path"], "graph_span_alignment_path")
+            ensure_agent_status(workspace_dir, state, "graph_path_analyst", {"passed", "partial"})
     elif step == 6:
         ensure(flags["span_mapping_done"] and flags["annotated_trace_generated"] and flags["timeline_generated"], "Step 6 输出 flags 不完整。")
         for key in ["span_code_mapping_path", "annotated_trace_path", "stream_span_timeline_path"]:
@@ -317,29 +419,75 @@ def main() -> int:
     state = load_state(workspace_dir)
     ensure(state["current_step"] == args.step, f"当前 current_step={state['current_step']}，不是 {args.step}")
     required_step(args.step)
+    current_substep = resolve_requested_substep(state, args.step, args.substep)
     required_task_plan = bool(state.get("flags", {}).get("task_plan_refresh_required", False))
     ensure_changed(workspace_dir, state, required_task_plan=required_task_plan)
-    step_requirements(workspace_dir, state, args.step)
-    ensure_state_consistency(workspace_dir, state, args.step)
-    ensure_provenance_consistency(workspace_dir, state, args.step)
-    if args.step == 5:
+    step_requirements(workspace_dir, state, args.step, current_substep)
+    ensure_state_consistency(workspace_dir, state, args.step, current_substep)
+    ensure_provenance_consistency(workspace_dir, state, args.step, current_substep)
+    if args.step == 5 and current_substep == "B":
         graph_path_status = str(state.get("agents", {}).get("graph_path_analyst", {}).get("last_status", "")).strip()
-        readiness_issues = collect_step5_step6_readiness_issues(state)
         if graph_path_status != "passed":
-            readiness_issues.insert(
-                0,
-                f"graph_path_analyst 当前 status={graph_path_status!r}；partial 允许正式审计与 artifact promotion，但不允许 mark Step 5 complete 并推进到 Step 6。",
+            return fail_step5_completion(
+                workspace_dir,
+                state,
+                [
+                    f"graph_path_analyst 当前 status={graph_path_status!r}；partial 允许正式审计与 artifact promotion，但不允许 mark Step 5 complete 并推进到 Step 6。"
+                ],
             )
+        readiness_issues = collect_step5_step6_readiness_issues(state)
         if readiness_issues:
             return fail_step5_completion(workspace_dir, state, readiness_issues)
 
-    state["last_completed_step"] = args.step
-    state["current_step"] = args.step + 1 if args.step < 7 else 7
-    state["next_action"] = "run_final_gate" if args.step == 7 else f"run_step_{args.step + 1}"
-    state["status"] = "awaiting_final_gate" if args.step == 7 else "in_progress"
+    step4_status = state.setdefault("substep_status", {}).setdefault("4", {"A": "pending", "B": "pending"})
+    step5_status = state.setdefault("substep_status", {}).setdefault("5", {"A": "pending", "B": "pending"})
+    if args.step == 3:
+        state["last_completed_step"] = 3
+        state["current_step"] = 4
+        state["current_substep"] = "A"
+        step4_status["A"] = "pending"
+        step4_status["B"] = "pending"
+        state["next_action"] = "run_step_4"
+        state["status"] = "in_progress"
+    elif args.step == 4 and current_substep == "A":
+        state["last_completed_step"] = max(int(state.get("last_completed_step", 0) or 0), 3)
+        state["current_step"] = 4
+        state["current_substep"] = "B"
+        step4_status["A"] = "completed"
+        step4_status["B"] = "pending"
+        state["next_action"] = "run_step_4"
+        state["status"] = "in_progress"
+    elif args.step == 4 and current_substep == "B":
+        state["last_completed_step"] = 4
+        state["current_step"] = 5
+        state["current_substep"] = "A"
+        step4_status["A"] = "completed"
+        step4_status["B"] = "completed"
+        step5_status["A"] = "pending"
+        step5_status["B"] = "pending"
+        state["next_action"] = "run_step_5"
+        state["status"] = "in_progress"
+    elif args.step == 5 and current_substep == "A":
+        state["last_completed_step"] = 4
+        state["current_step"] = 5
+        state["current_substep"] = "B"
+        step5_status["A"] = "completed"
+        step5_status["B"] = "pending"
+        state["next_action"] = "run_step_5"
+        state["status"] = "in_progress"
+    else:
+        state["last_completed_step"] = args.step
+        state["current_step"] = args.step + 1 if args.step < 7 else 7
+        state["current_substep"] = ""
+        if args.step == 5 and current_substep == "B":
+            step5_status["A"] = "completed"
+            step5_status["B"] = "completed"
+        state["next_action"] = "run_final_gate" if args.step == 7 else f"run_step_{args.step + 1}"
+        state["status"] = "awaiting_final_gate" if args.step == 7 else "in_progress"
     state.setdefault("step_history", []).append(
         {
             "step": args.step,
+            "substep": current_substep,
             "name": STEP_NAME(args.step),
             "status": "completed",
             "at": state["updated_at"],

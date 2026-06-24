@@ -4,7 +4,6 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from build_graph_seed_context import build_graph_seed_context_for_workspace
 from build_runtime_constraints import load_model_configs
 from workflow_common import dump_json, load_json, load_state, save_state
 
@@ -408,7 +407,6 @@ def build_graph_forward_context_for_workspace(workspace_dir: Path) -> dict[str, 
     state["artifacts"]["graph_forward_context_path"] = str(output_path)
     state["flags"]["graph_forward_context_built"] = True
     save_state(workspace_dir, state)
-    build_graph_seed_context_for_workspace(workspace_dir)
     return output
 
 

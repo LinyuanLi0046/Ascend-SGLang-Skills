@@ -62,6 +62,8 @@ def parse_launch_fields(launch_text: str) -> dict[str, Any]:
         tokens = shlex.split(launch_text, posix=False)
     except ValueError:
         tokens = launch_text.split()
+    continuation_tokens = {"\\", "`"}
+    tokens = [token for token in tokens if token not in continuation_tokens]
     fields: dict[str, Any] = {}
     index = 0
     while index < len(tokens):

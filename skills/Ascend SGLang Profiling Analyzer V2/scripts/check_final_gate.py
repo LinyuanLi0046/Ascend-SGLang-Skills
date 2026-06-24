@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import argparse
-import re
+from collections import Counter
 from pathlib import Path
 
 from workflow_common import (
+    collect_graph_operator_span_ids,
     compute_sha256,
+    extract_graph_alignment_rows,
+    graph_source_line_violation,
     load_provenance_manifest,
     load_json,
     load_state,
     now_iso,
     read_text,
+    read_repo_source_line,
     save_state,
     validate_code_location,
     write_error_context,
@@ -28,10 +32,6 @@ def ensure(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
-SELF_CALL_RE = re.compile(r"\bself\.\w+\s*\(")
-CONSTRUCTOR_LINE_RE = re.compile(r"^\s*self\.\w+\s*=\s*[A-Za-z_][\w\.]*\(")
-
-
 def graph_precision_required(graph_plan: dict, graph_mapping_targets: dict) -> bool:
     mode = str(graph_plan.get("mode", "")).strip()
     rows = graph_mapping_targets.get("rows", [])
@@ -42,36 +42,6 @@ def graph_precision_required(graph_plan: dict, graph_mapping_targets: dict) -> b
 def graph_precision_expected(graph_plan: dict) -> bool:
     mode = str(graph_plan.get("mode", "")).strip()
     return mode in {"spec_v2", "decode_graph"}
-
-
-def extract_graph_alignment_items(payload):
-    if isinstance(payload, dict):
-        for key in ("items", "rows"):
-            value = payload.get(key)
-            if isinstance(value, list):
-                return [item for item in value if isinstance(item, dict)]
-    if isinstance(payload, list):
-        return [item for item in payload if isinstance(item, dict)]
-    return []
-
-
-def read_repo_source_line(repo_root: Path, code_location: str) -> str:
-    path_text, _, line_text = str(code_location).rpartition(":")
-    if not path_text or not line_text.isdigit():
-        return ""
-    line_number = int(line_text)
-    if line_number <= 0:
-        return ""
-    file_path = repo_root / path_text
-    if not file_path.exists():
-        return ""
-    try:
-        lines = file_path.read_text(encoding="utf-8").splitlines()
-    except UnicodeDecodeError:
-        lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines()
-    if 1 <= line_number <= len(lines):
-        return lines[line_number - 1].strip()
-    return ""
 
 
 def is_graph_entry_location(code_location: str, repo_root: Path) -> bool:
@@ -85,22 +55,6 @@ def is_graph_entry_location(code_location: str, repo_root: Path) -> bool:
             "runner.forward(",
         ]
     )
-
-
-def graph_source_line_violation(code_location: str, repo_root: Path) -> str:
-    source_line = read_repo_source_line(repo_root, code_location)
-    stripped = source_line.strip()
-    if not stripped:
-        return ""
-    if ".replay(" in stripped:
-        return "graph_replay_entry"
-    if CONSTRUCTOR_LINE_RE.match(stripped):
-        return "constructor_line"
-    if SELF_CALL_RE.search(stripped):
-        return "module_call_anchor"
-    return ""
-
-
 def verify_provenance(workspace_dir: Path, state: dict) -> list[str]:
     manifest = load_provenance_manifest(workspace_dir)
     errors: list[str] = []
@@ -204,19 +158,20 @@ def main() -> int:
         errors.append("graph_execution_plan 仍不是 per_span_forward_code。")
     if graph_precision_required(graph_plan, graph_mapping_targets) and graph_forward_context.get("mapping_granularity") != "per_span_forward_code":
         errors.append("graph_forward_context 仍未达到 per_span_forward_code。")
-    graph_operator_span_ids = {
-        str(item.get("graph_operator_span_id", "")).strip()
-        for item in graph_operator_spans.get("rows", [])
-        if isinstance(item, dict) and str(item.get("graph_operator_span_id", "")).strip()
-    }
+    graph_operator_span_ids = collect_graph_operator_span_ids(graph_operator_spans)
     if graph_precision_required(graph_plan, graph_mapping_targets) and not graph_operator_span_ids:
         errors.append("graph_operator_spans.json 缺少正式 operator spans。")
-    alignment_items = extract_graph_alignment_items(graph_span_alignment)
+    alignment_items = extract_graph_alignment_rows(graph_span_alignment)
+    strict_alignment_formal_counter: Counter[str] = Counter()
+    strict_alignment_operator_counter: Counter[str] = Counter()
     for index, item in enumerate(alignment_items):
+        span_id = str(item.get("span_id", "")).strip()
         location_kind = str(item.get("location_kind", "")).strip()
         operator_evidence_kind = str(item.get("operator_evidence_kind", "")).strip()
         requires_further_drilldown = item.get("requires_further_drilldown")
         graph_operator_span_id = str(item.get("graph_operator_span_id", "")).strip()
+        if not span_id:
+            errors.append(f"graph_span_alignment[{index}] 缺少 span_id")
         code_location = str(item.get("code_location", "")).strip()
         if not graph_operator_span_id:
             errors.append(f"graph_span_alignment[{index}] 缺少 graph_operator_span_id")
@@ -234,6 +189,54 @@ def main() -> int:
             violation = graph_source_line_violation(code_location, Path(state["inputs"]["code_repo_path"]))
             if violation:
                 errors.append(f"graph_span_alignment[{index}] code_location 仍停在 {violation}: {code_location}")
+        if location_kind == "operator_call" and requires_further_drilldown is False:
+            if span_id:
+                strict_alignment_formal_counter[span_id] += 1
+            if graph_operator_span_id:
+                strict_alignment_operator_counter[graph_operator_span_id] += 1
+    if graph_precision_required(graph_plan, graph_mapping_targets):
+        aligned_formal_target_ids = set(strict_alignment_formal_counter)
+        aligned_graph_operator_span_ids = set(strict_alignment_operator_counter)
+        missing_formal_target_ids = sorted(formal_graph_target_ids - aligned_formal_target_ids)
+        unexpected_formal_target_ids = sorted(aligned_formal_target_ids - formal_graph_target_ids)
+        duplicate_formal_target_ids = sorted(
+            span_id for span_id, count in strict_alignment_formal_counter.items() if count > 1
+        )
+        missing_operator_span_ids = sorted(graph_operator_span_ids - aligned_graph_operator_span_ids)
+        unexpected_operator_span_ids = sorted(aligned_graph_operator_span_ids - graph_operator_span_ids)
+        duplicate_operator_span_ids = sorted(
+            span_id for span_id, count in strict_alignment_operator_counter.items() if count > 1
+        )
+        if missing_formal_target_ids:
+            errors.append(
+                "graph_span_alignment 未完整覆盖 formal graph targets: "
+                + ", ".join(missing_formal_target_ids[:10])
+            )
+        if unexpected_formal_target_ids:
+            errors.append(
+                "graph_span_alignment 包含不在 formal graph targets 内的 span_id: "
+                + ", ".join(unexpected_formal_target_ids[:10])
+            )
+        if duplicate_formal_target_ids:
+            errors.append(
+                "graph_span_alignment 对同一 formal graph target 输出了多条最终 operator_call 行: "
+                + ", ".join(duplicate_formal_target_ids[:10])
+            )
+        if missing_operator_span_ids:
+            errors.append(
+                "graph_span_alignment 未完整覆盖 graph_operator_spans: "
+                + ", ".join(missing_operator_span_ids[:10])
+            )
+        if unexpected_operator_span_ids:
+            errors.append(
+                "graph_span_alignment 包含无法回溯到 graph_operator_spans 的最终行: "
+                + ", ".join(unexpected_operator_span_ids[:10])
+            )
+        if duplicate_operator_span_ids:
+            errors.append(
+                "graph_span_alignment 对同一 graph_operator_span_id 输出了多条最终 operator_call 行: "
+                + ", ".join(duplicate_operator_span_ids[:10])
+            )
 
     mapping_by_span = {row["span_id"]: row for row in mapping.get("rows", [])}
     coverage = mapping.get("coverage", {})

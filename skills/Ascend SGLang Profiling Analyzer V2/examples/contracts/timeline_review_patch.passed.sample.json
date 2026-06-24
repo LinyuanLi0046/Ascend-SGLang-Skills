@@ -1,0 +1,43 @@
+{
+  "status": "passed",
+  "review_scope": {
+    "step": 3,
+    "reviewed_stream_count": 1,
+    "reviewed_span_count": 2
+  },
+  "allowed_mutation_fields": [
+    "stream_role",
+    "semantic_class",
+    "exclude_from_code_mapping",
+    "exclude_reason",
+    "semantic_confidence",
+    "parallel_group"
+  ],
+  "mutation_summary": {
+    "stream_update_count": 1,
+    "span_update_count": 1
+  },
+  "blocking_issues": [],
+  "stream_updates": [
+    {
+      "stream_id": "stream_1",
+      "stream_role": "compute",
+      "reason": "all semantic spans on this stream are compute-like after review",
+      "evidence_summary": "related task types and span names align with compute semantics"
+    }
+  ],
+  "span_updates": [
+    {
+      "span_id": "s_000123",
+      "field_updates": {
+        "semantic_class": "compute",
+        "exclude_from_code_mapping": false,
+        "exclude_reason": "",
+        "semantic_confidence": "high",
+        "parallel_group": "compute_lane_a"
+      },
+      "reason": "span has device compute semantics and should remain in mapping target set",
+      "evidence_summary": "task/op overlap and stream context both support compute classification"
+    }
+  ]
+}

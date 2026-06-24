@@ -21,6 +21,14 @@ def ensure(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
+def require_state_artifact_path(state: dict[str, Any], artifact_key: str, label: str) -> Path:
+    raw_path = str(state.get("artifacts", {}).get(artifact_key, "")).strip()
+    ensure(raw_path, f"缺少 state.artifacts.{artifact_key}，说明上游 {label} 尚未成功生成。")
+    path = Path(raw_path)
+    ensure(path.exists() and path.is_file(), f"{label} 不存在或不是文件: {path}")
+    return path
+
+
 def _normalize_string_list(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
@@ -95,10 +103,8 @@ def _build_target_row(
 def build_graph_mapping_targets_for_workspace(workspace_dir: Path) -> dict[str, Any]:
     state = load_state(workspace_dir)
     artifacts = state.get("artifacts", {})
-    graph_plan_path = Path(str(artifacts.get("graph_execution_plan_path", "")).strip())
-    classified_spans_path = Path(str(artifacts.get("classified_spans_path", "")).strip())
-    ensure(graph_plan_path.exists(), f"缺少 graph_execution_plan.json: {graph_plan_path}")
-    ensure(classified_spans_path.exists(), f"缺少 classified_spans.json: {classified_spans_path}")
+    graph_plan_path = require_state_artifact_path(state, "graph_execution_plan_path", "graph_execution_plan.json")
+    classified_spans_path = require_state_artifact_path(state, "classified_spans_path", "classified_spans.json")
 
     graph_plan = load_json(graph_plan_path)
     phase_windows = [item for item in graph_plan.get("phase_windows", []) if isinstance(item, dict)]

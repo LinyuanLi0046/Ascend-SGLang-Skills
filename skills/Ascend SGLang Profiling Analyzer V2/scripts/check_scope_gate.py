@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from pathlib import Path
+from typing import Any
 
 from span_scope_rules import match_exclude_rule, match_force_include_rule
 from workflow_common import dump_json, load_json, load_state, save_state
@@ -11,13 +12,22 @@ from workflow_common import dump_json, load_json, load_state, save_state
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="检查 Step 3 的硬件 span 作用域门禁。")
     parser.add_argument("--workspace-dir", required=True)
+    parser.add_argument("--classified-path", default="")
+    parser.add_argument("--output-path", default="")
+    parser.add_argument("--write-state", default="true")
     return parser
 
 
-def check_scope_gate_for_workspace(workspace_dir: Path) -> dict:
-    state = load_state(workspace_dir)
-    classified = load_json(Path(state["artifacts"]["classified_spans_path"]))
+def parse_bool_flag(value: str) -> bool:
+    normalized_value = str(value).strip().lower()
+    if normalized_value in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized_value in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"无法解析布尔参数: {value!r}")
 
+
+def build_scope_gate_result(classified: dict[str, Any]) -> dict[str, Any]:
     excluded_matches: list[str] = []
     force_include_missed: list[str] = []
     semantic_without_stream: list[str] = []
@@ -74,18 +84,42 @@ def check_scope_gate_for_workspace(workspace_dir: Path) -> dict:
         "warnings": warnings,
         "severe_issues": severe_issues,
     }
+    return result
 
-    result_path = workspace_dir / "output" / "scope_gate_result.json"
-    dump_json(result_path, result)
-    state["artifacts"]["scope_gate_result_path"] = str(result_path)
-    state["flags"]["scope_gate_passed"] = result["status"] == "passed"
-    save_state(workspace_dir, state)
+
+def check_scope_gate_for_workspace(
+    workspace_dir: Path,
+    *,
+    classified_path: Path | None = None,
+    output_path: Path | None = None,
+    write_state: bool = True,
+) -> dict[str, Any]:
+    state = load_state(workspace_dir)
+    resolved_classified_path = classified_path or Path(state["artifacts"]["classified_spans_path"])
+    classified = load_json(resolved_classified_path)
+    result = build_scope_gate_result(classified)
+
+    resolved_output_path = output_path or (workspace_dir / "output" / "scope_gate_result.json")
+    dump_json(resolved_output_path, result)
+    if write_state:
+        state["artifacts"]["scope_gate_result_path"] = str(resolved_output_path)
+        state["flags"]["scope_gate_passed"] = result["status"] == "passed"
+        save_state(workspace_dir, state)
     return result
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    check_scope_gate_for_workspace(Path(args.workspace_dir))
+    workspace_dir = Path(args.workspace_dir)
+    classified_path = Path(args.classified_path) if str(args.classified_path).strip() else None
+    output_path = Path(args.output_path) if str(args.output_path).strip() else None
+    write_state = parse_bool_flag(args.write_state)
+    check_scope_gate_for_workspace(
+        workspace_dir,
+        classified_path=classified_path,
+        output_path=output_path,
+        write_state=write_state,
+    )
     return 0
 
 

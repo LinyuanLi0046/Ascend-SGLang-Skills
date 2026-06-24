@@ -1,0 +1,31 @@
+{
+  "status": "passed",
+  "step": 5,
+  "substep": "A",
+  "bootstrap_target": "step5_graph_path_analyst",
+  "expected_script_sequence": [
+    "build_graph_forward_context.py",
+    "build_graph_seed_context.py",
+    "build_graph_operator_spans.py"
+  ],
+  "wrapper_lock_path": "logs/wrapper_runs/step5_graph_bootstrap.lock.json",
+  "wrapper_lock_status": "passed",
+  "wrapper_status_path": "audit/step5_graph_bootstrap_in_progress.json",
+  "wrapper_status_exists": true,
+  "wrapper_log_path": "logs/wrapper_runs/step5a_graph_bootstrap_runner.combined.log",
+  "wrapper_meta_path": "logs/wrapper_runs/step5a_graph_bootstrap_runner.meta.json",
+  "current_or_final_stage": "completed",
+  "required_artifacts_ready": true,
+  "required_flags_ready": true,
+  "ready_summary": {
+    "bootstrap_target": "step5_graph_path_analyst",
+    "required_artifacts_ready": true,
+    "required_flags_ready": true,
+    "ready": true,
+    "artifacts": [],
+    "flags": [],
+    "missing_artifacts": [],
+    "missing_flags": []
+  },
+  "blocking_issues": []
+}

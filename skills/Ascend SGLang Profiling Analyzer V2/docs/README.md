@@ -1,3 +1,7 @@
+# Ascend SGLang Profiling Analyzer V2
+
+当用户要求 从 profiling 文件夹 完成 profiling 到代码行的映射时使用
+
 # Docs Overview
 
 ## 1. 先看这里
@@ -17,6 +21,13 @@
 - `SUBAGENTS.md`：子 agent 入口索引
 - `SCRIPTS_AND_GATES.md`：脚本与门禁总览
 - `EXECUTION_AND_ACCEPTANCE.md`：执行方式、正式工件检查点与验收口径说明
+
+当前总览口径同步遵循以下主规则：
+
+- Step 3 现在同时维护 `timeline_review_patch` 与 `timeline_analysis_result` 两份正式合同；子 agent 先产 base 工件，再由 finalize promotion 成 canonical Step 3 结果。
+- Step 5 负责完成 graph 内 formal spans 的正式逐 span code mapping；只有 `status=passed` 才代表 graph 正式 mapping 完成。
+- Step 6 只消费 Step4/Step5 的正式 mapping 结果并渲染交付物，不负责 graph drilldown、repair 或 fallback。
+- Step 7 是正式验收层；`check_final_gate.py` 负责最终重复收口，而不是第一次发现基础 graph 精度问题。
 
 ## 3. 建议阅读顺序
 

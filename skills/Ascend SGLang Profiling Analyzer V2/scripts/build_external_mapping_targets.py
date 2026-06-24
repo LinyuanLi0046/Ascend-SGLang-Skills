@@ -18,6 +18,14 @@ def ensure(condition: bool, message: str) -> None:
         raise RuntimeError(message)
 
 
+def require_state_artifact_path(state: dict[str, Any], artifact_key: str, label: str) -> Path:
+    raw_path = str(state.get("artifacts", {}).get(artifact_key, "")).strip()
+    ensure(raw_path, f"缺少 state.artifacts.{artifact_key}，说明上游 {label} 尚未成功生成。")
+    path = Path(raw_path)
+    ensure(path.exists() and path.is_file(), f"{label} 不存在或不是文件: {path}")
+    return path
+
+
 def _normalized_graph_target_ids(graph_mapping_targets: dict[str, Any]) -> set[str]:
     rows = graph_mapping_targets.get("rows", [])
     if not isinstance(rows, list):
@@ -57,13 +65,9 @@ def _build_external_target_row(index: int, span: dict[str, Any]) -> dict[str, An
 def build_external_mapping_targets_for_workspace(workspace_dir: Path) -> dict[str, Any]:
     state = load_state(workspace_dir)
     artifacts = state.setdefault("artifacts", {})
-    classified_spans_path = Path(str(artifacts.get("classified_spans_path", "")).strip())
-    graph_mapping_targets_path = Path(str(artifacts.get("graph_mapping_targets_path", "")).strip())
-    graph_execution_plan_path = Path(str(artifacts.get("graph_execution_plan_path", "")).strip())
-
-    ensure(classified_spans_path.exists(), f"缺少 classified_spans.json: {classified_spans_path}")
-    ensure(graph_mapping_targets_path.exists(), f"缺少 graph_mapping_targets.json: {graph_mapping_targets_path}")
-    ensure(graph_execution_plan_path.exists(), f"缺少 graph_execution_plan.json: {graph_execution_plan_path}")
+    classified_spans_path = require_state_artifact_path(state, "classified_spans_path", "classified_spans.json")
+    graph_mapping_targets_path = require_state_artifact_path(state, "graph_mapping_targets_path", "graph_mapping_targets.json")
+    graph_execution_plan_path = require_state_artifact_path(state, "graph_execution_plan_path", "graph_execution_plan.json")
 
     graph_mapping_targets = load_json(graph_mapping_targets_path)
     graph_target_ids = _normalized_graph_target_ids(graph_mapping_targets)

@@ -55,6 +55,34 @@ def summarize_task_payload(workspace_dir: Path, agent_name: str) -> list[str]:
     if must_not_do:
         summary_lines.append("禁止事项:")
         summary_lines.extend(f"- {item}" for item in must_not_do)
+    allowed_diagnostics = [str(item).strip() for item in payload.get("allowed_diagnostics", []) if str(item).strip()]
+    if allowed_diagnostics:
+        summary_lines.append("允许的只读诊断:")
+        summary_lines.extend(f"- {item}" for item in allowed_diagnostics)
+    wrapper_log_contract = [str(item).strip() for item in payload.get("wrapper_log_contract", []) if str(item).strip()]
+    if wrapper_log_contract:
+        summary_lines.append("Wrapper 日志合同:")
+        summary_lines.extend(f"- {item}" for item in wrapper_log_contract)
+    terminal_strategy = [str(item).strip() for item in payload.get("terminal_strategy", []) if str(item).strip()]
+    if terminal_strategy:
+        summary_lines.append("终端执行策略:")
+        summary_lines.extend(f"- {item}" for item in terminal_strategy)
+    forbidden_launch_methods = [
+        str(item).strip() for item in payload.get("forbidden_launch_methods", []) if str(item).strip()
+    ]
+    if forbidden_launch_methods:
+        summary_lines.append("禁止启动方式:")
+        summary_lines.extend(f"- {item}" for item in forbidden_launch_methods)
+    retry_policy = [str(item).strip() for item in payload.get("retry_policy", []) if str(item).strip()]
+    if retry_policy:
+        summary_lines.append("重试策略:")
+        summary_lines.extend(f"- {item}" for item in retry_policy)
+    completion_signal_priority = [
+        str(item).strip() for item in payload.get("completion_signal_priority", []) if str(item).strip()
+    ]
+    if completion_signal_priority:
+        summary_lines.append("完成信号优先级:")
+        summary_lines.extend(f"- {item}" for item in completion_signal_priority)
     acceptance_checks = [str(item).strip() for item in payload.get("acceptance_checks", []) if str(item).strip()]
     if acceptance_checks:
         summary_lines.append("验收检查:")
@@ -119,6 +147,11 @@ def build_query_bundle(workspace_dir: Path, agent_name: str) -> dict[str, Any]:
     prompt_path = skill_dir / config["prompt_file"]
     guide_path = skill_dir / config["guide_file"]
     contract_schema_path = skill_dir / config["contract_schema_file"] if config.get("contract_schema_file") else None
+    secondary_contract_schema_paths = [
+        skill_dir / item
+        for item in config.get("secondary_contract_schema_files", [])
+        if str(item).strip()
+    ]
     contract_example_paths = [
         skill_dir / item
         for item in config.get("contract_example_files", [])
@@ -144,6 +177,7 @@ def build_query_bundle(workspace_dir: Path, agent_name: str) -> dict[str, Any]:
             "",
             "结构化合同文件:",
             *( [f"- {contract_schema_path}"] if contract_schema_path else ["- <none>"] ),
+            *( [f"- {path}" for path in secondary_contract_schema_paths] if secondary_contract_schema_paths else [] ),
             "",
             "参考示例文件:",
             *( [f"- {path}" for path in contract_example_paths] if contract_example_paths else ["- <none>"] ),
@@ -162,6 +196,9 @@ def build_query_bundle(workspace_dir: Path, agent_name: str) -> dict[str, Any]:
             "- 若任务合同摘要中列出了必读参考文件或附录读取合同，必须在开始正式分析与写 JSON 前先读完，不能把它们当成可选建议",
             "- 若提供了结构化合同文件或示例文件，必须在写正式 JSON 前逐项对照；禁止只按自然语言理解自行发挥 schema",
             "- 禁止越权扫描整个 workspace 或跳过手册要求的前置检查",
+            "- 对 profiling_preprocessor 的 Step 1 / Step 2，终端 exit code、命令返回、Task 本轮回复都不是可信的完成信号；禁止仅凭这些信号结束任务",
+            "- 对 profiling_preprocessor 的 Step 1 / Step 2，若 wrapper lock 仍为 running，唯一允许动作是继续等待或只读查看 lock / in_progress / child logs / 工件增长；严禁据此判成功、判失败、结束 Task 或重跑",
+            "- 对 profiling_preprocessor 的 Step 1 / Step 2，长时间无新 stdout、无新产物或无新可见输出本身不是失败依据；若 lock 仍为 running，只能继续等待并结合 in_progress 的 current_child_script / stage_phase / heartbeat_count / idle_seconds 做只读判断",
             "- 证据不足时必须返回 partial / failed / fix_available 等契约内状态，不能编造结论",
             "- 必须先写正式 JSON，再写辅助 Markdown 报告",
             "- graph 相关 payload 若需要列表包装，必须使用 {'status': ..., 'row_count': N, 'rows': [...]} 形式，不能提交 phase-dict 代替 rows",

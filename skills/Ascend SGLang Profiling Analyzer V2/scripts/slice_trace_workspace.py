@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -88,11 +90,18 @@ def iter_top_level_json_list(path: Path):
             buffer = buffer[end_index:].lstrip()
 
 
+def resolve_progress_interval(input_size: int) -> int:
+    if os.name == "nt" and input_size > 200 * 1024 * 1024:
+        return 50000
+    return 200000
+
+
 def slice_large_trace_list(
     input_path: Path,
     start_ns: int,
     end_ns: int,
     trace_unit: str,
+    progress_interval: int,
 ) -> tuple[list[dict], dict, bool]:
     out_events: list[dict] = []
     stats = {
@@ -113,8 +122,6 @@ def slice_large_trace_list(
     }
     prefer_string_output = True
     stacks: dict[tuple[object, object], list[dict]] = defaultdict(list)
-    progress_interval = 200000
-
     for index, evt in enumerate(iter_top_level_json_list(input_path)):
         stats["input_event_count"] += 1
         if index > 0 and index % progress_interval == 0:
@@ -212,6 +219,12 @@ def main() -> int:
         f"[slice_trace_workspace] 开始切片 trace，input={input_path}，size_bytes={input_size}，window=[{start_ns}, {end_ns}]",
         flush=True,
     )
+    progress_interval = resolve_progress_interval(input_size)
+    print(
+        f"[slice_trace_workspace] progress_interval={progress_interval} (is_windows={os.name == 'nt'})",
+        flush=True,
+    )
+    stage_start = time.perf_counter()
     if input_size > 200 * 1024 * 1024 and read_first_non_ws_char(input_path) == "[":
         print("[slice_trace_workspace] 检测到大文件顶层 list trace，启用流式低内存切片。", flush=True)
         meta = {}
@@ -220,6 +233,7 @@ def main() -> int:
             start_ns=start_ns,
             end_ns=end_ns,
             trace_unit=args.trace_unit,
+            progress_interval=progress_interval,
         )
     else:
         print("[slice_trace_workspace] 使用常规 trace 加载与切片路径。", flush=True)
@@ -234,6 +248,10 @@ def main() -> int:
             keep_other_events_in_window=True,
             prefer_string_output=None,
         )
+    print(
+        f"[slice_trace_workspace] 事件裁剪阶段完成，当前输出事件数={len(sliced_events)}，耗时={time.perf_counter() - stage_start:.2f}s",
+        flush=True,
+    )
     for index, event in enumerate(sliced_events):
         if event.get("ph") == "X":
             args_dict = event.setdefault("args", {})
@@ -241,13 +259,21 @@ def main() -> int:
                 args_dict["trace_event_index"] = index
     meta = dict(meta)
     meta["_slice_info"] = stats
+    print("[slice_trace_workspace] 开始写出 trace_slice.json", flush=True)
+    dump_start = time.perf_counter()
     dump_trace(output_path, sliced_events, meta, use_trace_events_key=use_trace_events_key)
+    print(
+        f"[slice_trace_workspace] trace_slice.json 写出完成，耗时={time.perf_counter() - dump_start:.2f}s",
+        flush=True,
+    )
     print(
         f"[slice_trace_workspace] 切片完成，输出事件数={len(sliced_events)}，output={output_path}",
         flush=True,
     )
     state["artifacts"]["trace_slice_path"] = str(output_path)
+    print("[slice_trace_workspace] 开始回写 state.artifacts.trace_slice_path", flush=True)
     save_state(workspace_dir, state)
+    print("[slice_trace_workspace] state 回写完成", flush=True)
     return 0
 
 

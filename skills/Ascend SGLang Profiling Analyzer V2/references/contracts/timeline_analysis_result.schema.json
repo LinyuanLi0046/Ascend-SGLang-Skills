@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "timeline_analysis_result",
+  "type": "object",
+  "required": [
+    "status",
+    "source",
+    "base_artifacts",
+    "review_patch_summary",
+    "mutation_summary",
+    "streams",
+    "parallel_groups",
+    "notes"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["passed"]
+    },
+    "source": {
+      "type": "string",
+      "minLength": 1
+    },
+    "base_artifacts": {
+      "type": "object",
+      "required": [
+        "classified_spans_base_path",
+        "scope_gate_result_base_path"
+      ],
+      "properties": {
+        "classified_spans_base_path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope_gate_result_base_path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": true
+    },
+    "review_patch_summary": {
+      "type": "object",
+      "required": [
+        "stream_update_count",
+        "span_update_count"
+      ],
+      "properties": {
+        "stream_update_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "span_update_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": true
+    },
+    "mutation_summary": {
+      "type": "object"
+    },
+    "streams": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "parallel_groups": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}

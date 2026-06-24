@@ -6,7 +6,18 @@ from pathlib import Path
 from typing import Any
 
 from span_scope_rules import match_exclude_rule
-from workflow_common import dump_json, load_json, load_state, save_state, validate_code_location, write_text
+from workflow_common import (
+    collect_graph_mapping_target_ids,
+    collect_graph_operator_span_ids,
+    dump_json,
+    extract_graph_alignment_rows,
+    graph_source_line_violation,
+    load_json,
+    load_state,
+    save_state,
+    validate_code_location,
+    write_text,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,17 +46,6 @@ def graph_precision_required(graph_plan: dict[str, Any], graph_mapping_targets: 
 def graph_precision_expected(graph_plan: dict[str, Any]) -> bool:
     mode = str(graph_plan.get("mode", "")).strip()
     return mode in {"spec_v2", "decode_graph"}
-
-
-def extract_graph_alignment_items(payload: Any) -> list[dict[str, Any]]:
-    if isinstance(payload, dict):
-        for key in ("items", "rows"):
-            value = payload.get(key)
-            if isinstance(value, list):
-                return [item for item in value if isinstance(item, dict)]
-    if isinstance(payload, list):
-        return [item for item in payload if isinstance(item, dict)]
-    return []
 
 
 def require_artifact_path(artifacts: dict[str, Any], key: str) -> Path:
@@ -139,30 +139,26 @@ def main() -> int:
 
     graph_precision_issues: list[str] = []
     graph_mapping_target_rows = graph_mapping_targets.get("rows", []) if isinstance(graph_mapping_targets.get("rows", []), list) else []
-    formal_graph_target_ids = {
-        str(row.get("span_id", "")).strip()
-        for row in graph_mapping_target_rows
-        if isinstance(row, dict) and str(row.get("span_id", "")).strip()
-    }
+    formal_graph_target_ids = collect_graph_mapping_target_ids(graph_mapping_targets)
     if graph_precision_expected(graph_plan) and not formal_graph_target_ids:
         graph_precision_issues.append("graph_mapping_targets.json 未提供任何正式 formal graph target。")
     if graph_precision_required(graph_plan, graph_mapping_targets) and graph_plan.get("mapping_granularity") != "per_span_forward_code":
         graph_precision_issues.append("graph_execution_plan.mapping_granularity 不是 per_span_forward_code。")
     if graph_precision_required(graph_plan, graph_mapping_targets) and graph_forward_context.get("mapping_granularity") != "per_span_forward_code":
         graph_precision_issues.append("graph_forward_context.mapping_granularity 不是 per_span_forward_code。")
-    alignment_items = extract_graph_alignment_items(graph_span_alignment)
-    operator_span_ids = {
-        str(item.get("graph_operator_span_id", "")).strip()
-        for item in graph_operator_spans.get("rows", [])
-        if isinstance(item, dict) and str(item.get("graph_operator_span_id", "")).strip()
-    }
+    alignment_items = extract_graph_alignment_rows(graph_span_alignment)
+    operator_span_ids = collect_graph_operator_span_ids(graph_operator_spans)
+    repo_root = Path(str(state.get("inputs", {}).get("code_repo_path", "")).strip())
     location_kind_breakdown: dict[str, int] = {}
     operator_evidence_breakdown: dict[str, int] = {}
+    strict_alignment_formal_counter: Counter[str] = Counter()
+    strict_alignment_operator_counter: Counter[str] = Counter()
     if graph_precision_required(graph_plan, graph_mapping_targets) and not alignment_items:
         graph_precision_issues.append("graph_span_alignment 缺少正式 span items/rows。")
     if graph_precision_required(graph_plan, graph_mapping_targets) and not operator_span_ids:
         graph_precision_issues.append("graph_operator_spans.json 缺少正式 operator spans。")
     for index, item in enumerate(alignment_items):
+        span_id = str(item.get("span_id", "")).strip()
         location_kind = str(item.get("location_kind", "")).strip()
         operator_evidence_kind = str(item.get("operator_evidence_kind", "")).strip()
         requires_further_drilldown = item.get("requires_further_drilldown")
@@ -171,6 +167,8 @@ def main() -> int:
         operator_evidence_breakdown[operator_evidence_kind or "<missing>"] = (
             operator_evidence_breakdown.get(operator_evidence_kind or "<missing>", 0) + 1
         )
+        if not span_id:
+            graph_precision_issues.append(f"graph_span_alignment[{index}] 缺少 span_id")
         if not graph_operator_span_id:
             graph_precision_issues.append(f"graph_span_alignment[{index}] 缺少 graph_operator_span_id")
         elif graph_operator_span_id not in operator_span_ids:
@@ -185,6 +183,63 @@ def main() -> int:
             )
         if not operator_evidence_kind:
             graph_precision_issues.append(f"graph_span_alignment[{index}] 缺少 operator_evidence_kind")
+        code_location = str(item.get("code_location", "")).strip()
+        if not validate_code_location(code_location):
+            graph_precision_issues.append(f"graph_span_alignment[{index}] 非法 code_location={code_location or '<missing>'}")
+        else:
+            violation = graph_source_line_violation(code_location, repo_root)
+            if violation:
+                graph_precision_issues.append(
+                    f"graph_span_alignment[{index}] code_location 仍停在 {violation}: {code_location}"
+                )
+        if location_kind == "operator_call" and requires_further_drilldown is False:
+            if span_id:
+                strict_alignment_formal_counter[span_id] += 1
+            if graph_operator_span_id:
+                strict_alignment_operator_counter[graph_operator_span_id] += 1
+    aligned_formal_target_ids = set(strict_alignment_formal_counter)
+    aligned_graph_operator_span_ids = set(strict_alignment_operator_counter)
+    if graph_precision_required(graph_plan, graph_mapping_targets):
+        missing_formal_target_ids = sorted(formal_graph_target_ids - aligned_formal_target_ids)
+        unexpected_formal_target_ids = sorted(aligned_formal_target_ids - formal_graph_target_ids)
+        duplicate_formal_target_ids = sorted(
+            span_id for span_id, count in strict_alignment_formal_counter.items() if count > 1
+        )
+        missing_operator_span_ids = sorted(operator_span_ids - aligned_graph_operator_span_ids)
+        unexpected_operator_span_ids = sorted(aligned_graph_operator_span_ids - operator_span_ids)
+        duplicate_operator_span_ids = sorted(
+            span_id for span_id, count in strict_alignment_operator_counter.items() if count > 1
+        )
+        if missing_formal_target_ids:
+            graph_precision_issues.append(
+                "graph_span_alignment 未完整覆盖 formal graph targets: "
+                + ", ".join(missing_formal_target_ids[:10])
+            )
+        if unexpected_formal_target_ids:
+            graph_precision_issues.append(
+                "graph_span_alignment 包含不在 formal graph targets 内的 span_id: "
+                + ", ".join(unexpected_formal_target_ids[:10])
+            )
+        if duplicate_formal_target_ids:
+            graph_precision_issues.append(
+                "graph_span_alignment 对同一 formal graph target 输出了多条最终 operator_call 行: "
+                + ", ".join(duplicate_formal_target_ids[:10])
+            )
+        if missing_operator_span_ids:
+            graph_precision_issues.append(
+                "graph_span_alignment 未完整覆盖 graph_operator_spans: "
+                + ", ".join(missing_operator_span_ids[:10])
+            )
+        if unexpected_operator_span_ids:
+            graph_precision_issues.append(
+                "graph_span_alignment 包含无法回溯到 graph_operator_spans 的最终行: "
+                + ", ".join(unexpected_operator_span_ids[:10])
+            )
+        if duplicate_operator_span_ids:
+            graph_precision_issues.append(
+                "graph_span_alignment 对同一 graph_operator_span_id 输出了多条最终 operator_call 行: "
+                + ", ".join(duplicate_operator_span_ids[:10])
+            )
 
     mapping_complete = True
     annotated_trace_ok = True
@@ -291,22 +346,10 @@ def main() -> int:
         "graph_operator_span_summary": {
             "formal_graph_target_count": len(formal_graph_target_ids),
             "graph_operator_span_count": len(operator_span_ids),
-            "aligned_formal_graph_target_count": len(
-                {
-                    str(item.get("span_id", "")).strip()
-                    for item in alignment_items
-                    if str(item.get("span_id", "")).strip() in formal_graph_target_ids
-                    and str(item.get("location_kind", "")).strip() == "operator_call"
-                    and item.get("requires_further_drilldown") is False
-                }
-            ),
-            "aligned_graph_operator_span_count": sum(
-                1
-                for item in alignment_items
-                if str(item.get("graph_operator_span_id", "")).strip() in operator_span_ids
-                and str(item.get("location_kind", "")).strip() == "operator_call"
-                and item.get("requires_further_drilldown") is False
-            ),
+            "aligned_formal_graph_target_count": len(aligned_formal_target_ids),
+            "aligned_graph_operator_span_count": len(aligned_graph_operator_span_ids),
+            "missing_formal_graph_target_count": max(0, len(formal_graph_target_ids) - len(aligned_formal_target_ids)),
+            "missing_graph_operator_span_count": max(0, len(operator_span_ids) - len(aligned_graph_operator_span_ids)),
         },
         "scope_summary": scope_summary,
         "scope_issues": scope_issues,

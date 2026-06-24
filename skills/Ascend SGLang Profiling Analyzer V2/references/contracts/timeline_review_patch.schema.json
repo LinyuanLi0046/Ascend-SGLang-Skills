@@ -1,0 +1,139 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "timeline_review_patch",
+  "type": "object",
+  "required": [
+    "status",
+    "review_scope",
+    "allowed_mutation_fields",
+    "stream_updates",
+    "span_updates",
+    "mutation_summary",
+    "blocking_issues"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["passed"]
+    },
+    "review_scope": {
+      "type": "object"
+    },
+    "allowed_mutation_fields": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "stream_role",
+          "semantic_class",
+          "exclude_from_code_mapping",
+          "exclude_reason",
+          "semantic_confidence",
+          "parallel_group"
+        ]
+      }
+    },
+    "mutation_summary": {
+      "type": "object"
+    },
+    "blocking_issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "stream_updates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/streamUpdate"
+      }
+    },
+    "span_updates": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/spanUpdate"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "definitions": {
+    "streamUpdate": {
+      "type": "object",
+      "required": [
+        "stream_id",
+        "stream_role",
+        "reason",
+        "evidence_summary"
+      ],
+      "properties": {
+        "stream_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stream_role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_summary": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "spanUpdate": {
+      "type": "object",
+      "required": [
+        "span_id",
+        "field_updates",
+        "reason",
+        "evidence_summary"
+      ],
+      "properties": {
+        "span_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "field_updates": {
+          "type": "object",
+          "minProperties": 1,
+          "properties": {
+            "semantic_class": {
+              "type": "string",
+              "minLength": 1
+            },
+            "exclude_from_code_mapping": {
+              "type": "boolean"
+            },
+            "exclude_reason": {
+              "type": "string"
+            },
+            "semantic_confidence": {
+              "type": "string",
+              "minLength": 1
+            },
+            "parallel_group": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_summary": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

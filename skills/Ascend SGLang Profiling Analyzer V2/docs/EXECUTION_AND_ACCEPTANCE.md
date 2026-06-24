@@ -77,6 +77,13 @@
 
 - `artifacts/index/timeline_index.json`
 - `artifacts/classification/classified_spans.json`
+- `artifacts/classification/classified_spans.base.json`
+- `artifacts/classification/classified_spans.reviewed.json`
+- `output/scope_gate_result.base.json`
+- `output/scope_gate_result.reviewed.json`
+- `output/timeline_review_patch.json`
+- `output/timeline_analysis.json`
+- `output/timeline_analysis.md`
 - `artifacts/mapping/stack_evidence.json`
 - `artifacts/mapping/stack_evidence_lite.json`
 - `artifacts/mapping/stack_call_paths.json`
@@ -90,6 +97,13 @@
 - `artifacts/graph/forward_segment_template.json`
 - `artifacts/graph/graph_span_alignment.json`
 - `artifacts/mapping/span_code_mapping.json`
+
+说明：
+
+- Step 3 正式维护三层工件：base、reviewed、canonical；Step 4 以后只消费 canonical `classified_spans.json` 与 canonical `scope_gate_result.json`。
+- `timeline_review_patch.json` 与 `timeline_analysis.json` 都属于 Step 3 正式输出；前者是 primary contract，后者必须满足 `timeline_analysis_result` 合同并与 patch 摘要一致。
+- `graph_span_alignment.json` 只有在 Step5 `graph_path_analyst` 正式 `status=passed` 且完成逐 span `operator_call` 级定位时，才属于可被 Step6 正式消费的 graph mapping。
+- 若 Step5 仅为 `status=partial`，主链只允许保留分析性 graph 工件；这不代表 graph 正式 mapping 已完成，也不能视作 Step6 可用输入。
 
 ### 正式交付物
 
@@ -110,10 +124,16 @@ P0 当前验收看以下几项：
 - `span_code_mapping.json.coverage.mapped_span_count > 0`
 - `span_code_mapping.json.coverage.unresolved_semantic_span_count = 0`
 - 所有已识别 graph spans 的正式 graph 场景，其 `mapping_granularity = per_span_forward_code`
-- Step 5 若宣称 `passed`，其正式 payload 中不得再出现 `line<=0` 或 `code_location=path:0` 这类未核实行号
+- Step 5 若宣称 `passed`，其正式 payload 中不得再出现 `line<=0` 或 `code_location=path:0` 这类未核实行号，且 `graph_span_alignment.json` 必须已经是逐 span `operator_call` + `file:line` 的正式结果
+- Step 6 只消费 Step4/Step5 的正式结果，不负责 graph expansion、graph repair 或 graph fallback
 - `trace_view.annotated.json` 存在
 - `stream_span_timeline.json` 存在
+- `output/validation_result.json.status = passed`，因为 Step7 才是正式验收；其中 graph 精度问题应在 Step7 就暴露出来
 - `check_final_gate.py` 通过
+
+补充说明：
+
+- `check_final_gate.py` 仍是最终硬门禁，但其角色是重复确认 Step7 已通过的正式结果，而不是第一次替 Step5/Step7 发现基础 graph 精度问题。
 
 ## 7. 文档边界
 
