@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import fnmatch
 import hashlib
 import json
+import os
+import queue
 import re
+import subprocess
+import sys
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -22,7 +29,9 @@ STEP_DEFINITIONS = {
 AGENT_NAMES = {
     "profiling_preprocessor",
     "timeline_analyst",
+    "step4_bootstrap_runner",
     "stack_mapper",
+    "graph_bootstrap_runner",
     "graph_path_analyst",
     "artifact_validator",
     "profiling_debugger",
@@ -30,6 +39,9 @@ AGENT_NAMES = {
 }
 
 CODE_LOCATION_RE = re.compile(r"^[^:]+:\d+$")
+SELF_CALL_RE = re.compile(r"\bself(?:\.\w+)?\s*\(")
+MODULE_CALL_RE = re.compile(r"\b(?:module|layer)\s*\(")
+CONSTRUCTOR_LINE_RE = re.compile(r"^\s*self\.\w+\s*=\s*[A-Za-z_][\w\.]*\(")
 TEMP_SCRIPT_PATTERNS = ("_*.py", "tmp*.py", "debug_*.py", "temp*.py")
 
 
@@ -57,9 +69,181 @@ def load_json(path: Path) -> dict[str, Any]:
 
 def dump_json(path: Path, payload: dict[str, Any]) -> None:
     ensure_parent(path)
-    with path.open("w", encoding="utf-8", newline="\n") as handle:
-        json.dump(payload, handle, indent=2, ensure_ascii=False)
-        handle.write("\n")
+    tmp_path = path.parent / f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        with tmp_path.open("w", encoding="utf-8", newline="\n") as handle:
+            json.dump(payload, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, path)
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+
+def sanitize_log_token(value: str) -> str:
+    normalized = re.sub(r"[^0-9A-Za-z._-]+", "_", value.strip())
+    normalized = normalized.strip("._-")
+    return normalized or "unnamed"
+
+
+def child_run_logs_dir(workspace_dir: Path) -> Path:
+    path = workspace_dir / "logs" / "wrapper_runs"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def build_child_process_env(extra_env: dict[str, str] | None = None) -> dict[str, str]:
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+    env.setdefault("PYTHONIOENCODING", "utf-8")
+    if extra_env:
+        env.update({str(key): str(value) for key, value in extra_env.items()})
+    return env
+
+
+def run_child_script_with_logs(
+    *,
+    script_path: Path,
+    workspace_dir: Path,
+    repo_root: Path,
+    log_prefix: str,
+    heartbeat_seconds: int = 30,
+    extra_env: dict[str, str] | None = None,
+    extra_args: list[str] | None = None,
+    on_heartbeat: Callable[[dict[str, Any]], None] | None = None,
+) -> dict[str, Any]:
+    ensure_parent(script_path)
+    logs_dir = child_run_logs_dir(workspace_dir)
+    script_token = sanitize_log_token(log_prefix)
+    combined_log_path = logs_dir / f"{script_token}.combined.log"
+    metadata_path = logs_dir / f"{script_token}.meta.json"
+    command = [sys.executable, "-u", str(script_path), "--workspace-dir", str(workspace_dir)]
+    if extra_args:
+        command.extend(str(item) for item in extra_args)
+    env = build_child_process_env(extra_env)
+    start_iso = now_iso()
+    start_perf = time.perf_counter()
+    output_line_count = 0
+    heartbeat_count = 0
+    last_output_at = time.monotonic()
+    line_queue: queue.Queue[str | None] = queue.Queue()
+    reader_finished = False
+
+    with combined_log_path.open("w", encoding="utf-8", newline="\n") as log_handle:
+        header = (
+            f"[child-runner] start script={script_path.name} cwd={repo_root} "
+            f"workspace={workspace_dir} platform={sys.platform} heartbeat_seconds={heartbeat_seconds}"
+        )
+        print(header, flush=True)
+        log_handle.write(header + "\n")
+        log_handle.flush()
+
+        process = subprocess.Popen(
+            command,
+            cwd=repo_root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            env=env,
+        )
+
+        def _reader() -> None:
+            try:
+                assert process.stdout is not None
+                for raw_line in process.stdout:
+                    line_queue.put(raw_line.rstrip("\r\n"))
+            finally:
+                line_queue.put(None)
+
+        reader = threading.Thread(target=_reader, name=f"{script_token}_reader", daemon=True)
+        reader.start()
+
+        while True:
+            try:
+                line = line_queue.get(timeout=heartbeat_seconds)
+            except queue.Empty:
+                if process.poll() is None:
+                    heartbeat_count += 1
+                    heartbeat_payload = {
+                        "script_name": script_path.name,
+                        "elapsed_seconds": round(time.perf_counter() - start_perf, 6),
+                        "idle_seconds": round(time.monotonic() - last_output_at, 6),
+                        "output_line_count": output_line_count,
+                        "heartbeat_count": heartbeat_count,
+                        "combined_log_path": str(combined_log_path),
+                        "metadata_path": str(metadata_path),
+                    }
+                    heartbeat = (
+                        f"[child-runner] heartbeat script={script_path.name} "
+                        f"elapsed_seconds={heartbeat_payload['elapsed_seconds']:.2f} "
+                        f"idle_seconds={heartbeat_payload['idle_seconds']:.2f} "
+                        f"output_line_count={output_line_count}"
+                    )
+                    print(heartbeat, flush=True)
+                    log_handle.write(heartbeat + "\n")
+                    log_handle.flush()
+                    if on_heartbeat is not None:
+                        on_heartbeat(heartbeat_payload)
+                    continue
+                if reader_finished and line_queue.empty():
+                    break
+                continue
+
+            if line is None:
+                reader_finished = True
+                if process.poll() is not None and line_queue.empty():
+                    break
+                continue
+
+            output_line_count += 1
+            last_output_at = time.monotonic()
+            print(line, flush=True)
+            log_handle.write(line + "\n")
+            log_handle.flush()
+
+        return_code = process.wait()
+        reader.join(timeout=1.0)
+        duration_seconds = time.perf_counter() - start_perf
+        footer = (
+            f"[child-runner] done script={script_path.name} return_code={return_code} "
+            f"duration_seconds={duration_seconds:.2f} output_line_count={output_line_count} "
+            f"heartbeat_count={heartbeat_count}"
+        )
+        print(footer, flush=True)
+        log_handle.write(footer + "\n")
+        log_handle.flush()
+
+    metadata = {
+        "schema_version": "child_run_metadata_v1",
+        "script_path": str(script_path),
+        "workspace_dir": str(workspace_dir),
+        "repo_root": str(repo_root),
+        "command": command,
+        "combined_log_path": str(combined_log_path),
+        "start_at": start_iso,
+        "end_at": now_iso(),
+        "duration_seconds": round(duration_seconds, 6),
+        "return_code": return_code,
+        "heartbeat_seconds": heartbeat_seconds,
+        "heartbeat_count": heartbeat_count,
+        "output_line_count": output_line_count,
+        "reader_finished": reader_finished,
+        "platform": sys.platform,
+        "is_windows": os.name == "nt",
+    }
+    dump_json(metadata_path, metadata)
+    metadata["metadata_path"] = str(metadata_path)
+    if return_code != 0:
+        raise subprocess.CalledProcessError(return_code, command)
+    return metadata
 
 
 def _consume_until_named_array(handle, field_names: tuple[str, ...], missing_message: str) -> str:
@@ -277,6 +461,36 @@ def required_step(step: int) -> str:
     return STEP_DEFINITIONS[step]
 
 
+def normalize_substep(value: Any) -> str:
+    normalized = str(value or "").strip().upper()
+    return normalized if normalized in {"A", "B"} else ""
+
+
+def effective_substep(state: dict[str, Any], step: int | None = None) -> str:
+    current_step = int(step if step is not None else int(state.get("current_step", 0) or 0))
+    raw_substep = normalize_substep(state.get("current_substep", ""))
+    if current_step not in {4, 5}:
+        return raw_substep
+    if raw_substep in {"A", "B"}:
+        return raw_substep
+    flags = state.get("flags", {})
+    artifacts = state.get("artifacts", {})
+    if current_step == 4:
+        step4_bootstrap_result_path = Path(str(artifacts.get("step4_bootstrap_result_path", "")).strip())
+        if bool(flags.get("external_span_mapping_built")):
+            return "B"
+        if step4_bootstrap_result_path.exists():
+            return "B"
+        return "A"
+
+    graph_bootstrap_result_path = Path(str(artifacts.get("graph_bootstrap_result_path", "")).strip())
+    if bool(flags.get("graph_span_alignment_built")):
+        return "B"
+    if graph_bootstrap_result_path.exists():
+        return "B"
+    return "A"
+
+
 def split_assignment(value: str) -> tuple[str, str]:
     if "=" not in value:
         raise ValueError(f"参数必须形如 key=value: {value}")
@@ -320,6 +534,123 @@ def append_findings(workspace_dir: Path, section: str, bullet: str) -> None:
 
 def validate_code_location(code_location: str) -> bool:
     return bool(CODE_LOCATION_RE.match(code_location))
+
+
+def extract_graph_alignment_rows(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        rows = payload.get("rows")
+        if isinstance(rows, list):
+            return [item for item in rows if isinstance(item, dict)]
+        items = payload.get("items")
+        if isinstance(items, list):
+            return [item for item in items if isinstance(item, dict)]
+        return []
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    return []
+
+
+def collect_graph_mapping_target_ids(payload: dict[str, Any]) -> set[str]:
+    rows = payload.get("rows", [])
+    if not isinstance(rows, list):
+        return set()
+    return {
+        str(row.get("span_id", "")).strip()
+        for row in rows
+        if isinstance(row, dict) and str(row.get("span_id", "")).strip()
+    }
+
+
+def collect_graph_operator_span_map(payload: dict[str, Any]) -> dict[str, str]:
+    rows = payload.get("rows", [])
+    if not isinstance(rows, list):
+        return {}
+    operator_span_map: dict[str, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        graph_operator_span_id = str(row.get("graph_operator_span_id", "")).strip()
+        span_id = str(row.get("span_id", "")).strip()
+        if graph_operator_span_id and span_id:
+            operator_span_map[graph_operator_span_id] = span_id
+    return operator_span_map
+
+
+def collect_graph_operator_span_ids(payload: dict[str, Any]) -> set[str]:
+    return set(collect_graph_operator_span_map(payload).keys())
+
+
+def read_repo_source_line(repo_root: Path, code_location: str) -> str:
+    path_text, _, line_text = str(code_location).rpartition(":")
+    if not path_text or not line_text.isdigit():
+        return ""
+    line_number = int(line_text)
+    if line_number <= 0:
+        return ""
+    file_path = repo_root / path_text
+    if not file_path.exists():
+        return ""
+    try:
+        lines = file_path.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        lines = file_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    if 1 <= line_number <= len(lines):
+        return lines[line_number - 1].strip()
+    return ""
+
+
+def graph_source_line_violation(code_location: str, repo_root: Path) -> str:
+    source_line = read_repo_source_line(repo_root, code_location)
+    stripped = source_line.strip()
+    if not stripped:
+        return ""
+    if ".replay(" in stripped:
+        return "graph_replay_entry"
+    if CONSTRUCTOR_LINE_RE.match(stripped):
+        return "constructor_line"
+    if SELF_CALL_RE.search(stripped) or MODULE_CALL_RE.search(stripped):
+        return "module_call_anchor"
+    return ""
+
+
+def validate_graph_alignment_row(
+    row: dict[str, Any],
+    operator_span_map: dict[str, str],
+    formal_graph_target_ids: set[str],
+    *,
+    require_final_operator_call: bool,
+) -> list[str]:
+    violations: list[str] = []
+    span_id = str(row.get("span_id", "")).strip()
+    graph_operator_span_id = str(row.get("graph_operator_span_id", "")).strip()
+    location_kind = str(row.get("location_kind", "")).strip()
+    operator_evidence_kind = str(row.get("operator_evidence_kind", "")).strip()
+    requires_further_drilldown = row.get("requires_further_drilldown")
+    code_location = str(row.get("code_location", "")).strip()
+    if not span_id:
+        violations.append("span_id missing")
+    elif formal_graph_target_ids and span_id not in formal_graph_target_ids:
+        violations.append(f"span_id out_of_scope={span_id}")
+    if not graph_operator_span_id:
+        violations.append("graph_operator_span_id missing")
+    else:
+        expected_span_id = operator_span_map.get(graph_operator_span_id)
+        if not expected_span_id:
+            violations.append(f"graph_operator_span_id unresolved={graph_operator_span_id}")
+        elif span_id and span_id != expected_span_id:
+            violations.append(
+                f"span_id/operator_mismatch span_id={span_id} expected={expected_span_id} graph_operator_span_id={graph_operator_span_id}"
+            )
+    if not operator_evidence_kind:
+        violations.append("operator_evidence_kind missing")
+    if require_final_operator_call:
+        if location_kind != "operator_call":
+            violations.append(f"location_kind={location_kind or '<missing>'}")
+        if requires_further_drilldown is not False:
+            violations.append(f"requires_further_drilldown={requires_further_drilldown!r}")
+        if code_location and not validate_code_location(code_location):
+            violations.append(f"invalid_code_location={code_location}")
+    return violations
 
 
 def normalize_repo_relative_path(raw_path: str, repo_root: str | Path) -> str:

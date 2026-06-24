@@ -262,6 +262,7 @@ def resolve_inputs_for_workspace(workspace_dir: Path) -> dict[str, Any]:
         normalized_launch_text = _replace_token(normalized_launch_text, draft_model_path_from_launch, resolved_draft_root)
     if normalized_launch_text:
         inputs["launch_command_text"] = normalized_launch_text
+    normalized_parsed_launch_fields = parse_launch_fields(normalized_launch_text) if normalized_launch_text else parsed_launch_fields
 
     resolution = {
         "schema_version": "input_resolution_v1",
@@ -272,7 +273,7 @@ def resolve_inputs_for_workspace(workspace_dir: Path) -> dict[str, Any]:
             "launch_command_file": _normalize_text(inputs.get("launch_command_file", "")),
             "launch_command_text": launch_text,
             "normalized_launch_text": normalized_launch_text,
-            "parsed_launch_fields": parsed_launch_fields,
+            "parsed_launch_fields": normalized_parsed_launch_fields,
             "evidence": launch_evidence,
         },
         "time_window": {
@@ -314,7 +315,7 @@ def resolve_inputs_for_workspace(workspace_dir: Path) -> dict[str, Any]:
             "schema_version": "launch_command_normalized_v1",
             "launch_command_file": _normalize_text(inputs.get("launch_command_file", "")),
             "normalized_launch_text": normalized_launch_text,
-            "parsed_launch_fields": parsed_launch_fields,
+            "parsed_launch_fields": normalized_parsed_launch_fields,
             "resolved_model_root_path": _normalize_text(inputs.get("model_root_path", "")),
             "resolved_draft_model_root_path": _normalize_text(inputs.get("draft_model_root_path", "")),
         },

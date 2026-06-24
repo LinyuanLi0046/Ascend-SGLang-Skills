@@ -570,6 +570,8 @@ def _load_external_mapping_target_rows(state: dict[str, Any]) -> list[dict[str, 
 def build_stack_call_paths_for_workspace(workspace_dir: Path) -> dict[str, Any]:
     state = load_state(workspace_dir)
     stack_evidence_path = _resolve_stack_evidence_input_path(state)
+    if stack_evidence_path is None:
+        raise RuntimeError("缺少 stack_evidence_lite.json / stack_evidence.json；请先完成 Step 4 shared deterministic bootstrap。")
     stack_evidence = _safe_load_json(str(stack_evidence_path) if stack_evidence_path else "")
     external_mapping_targets = _load_external_mapping_target_rows(state)
     python_tracer_index = _safe_load_json(str(state["artifacts"].get("python_tracer_index_path", "")))

@@ -23,6 +23,46 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def require_state_artifact_path(state: dict[str, Any], artifact_key: str, label: str) -> Path:
+    raw_path = str(state.get("artifacts", {}).get(artifact_key, "")).strip()
+    ensure(raw_path, f"缺少 state.artifacts.{artifact_key}，说明上游 {label} 尚未成功生成。")
+    path = Path(raw_path)
+    ensure(path.exists() and path.is_file(), f"{label} 不存在或不是文件: {path}")
+    return path
+
+
+def load_stack_evidence_for_graph_inventory(state: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+    artifacts = state.get("artifacts", {})
+    last_candidate: Path | None = None
+    for artifact_key, label in (
+        ("stack_evidence_lite_path", "stack_evidence_lite.json"),
+        ("stack_evidence_path", "stack_evidence.json"),
+    ):
+        raw_path = str(artifacts.get(artifact_key, "")).strip()
+        if not raw_path:
+            continue
+        candidate = Path(raw_path)
+        last_candidate = candidate
+        if not candidate.exists() or not candidate.is_file():
+            continue
+        payload = load_json(candidate)
+        if isinstance(payload, dict):
+            return candidate, payload
+    if last_candidate is not None:
+        raise RuntimeError(f"缺少可用 stack_evidence 输入: {last_candidate}")
+    raise RuntimeError("缺少 stack_evidence_lite.json / stack_evidence.json，无法构建 graph_execution_plan。")
+
+
+def stack_evidence_has_spec_v2_anchor(stack_evidence: dict[str, Any]) -> bool:
+    summary = stack_evidence.get("summary", {})
+    if isinstance(summary, dict) and "has_spec_v2_anchor_present" in summary:
+        return bool(summary.get("has_spec_v2_anchor_present"))
+    rows = stack_evidence.get("rows", [])
+    if not isinstance(rows, list):
+        return False
+    return any(bool(row.get("has_spec_v2_anchor")) for row in rows if isinstance(row, dict))
+
+
 def read_launch_text(state: dict[str, Any]) -> str:
     input_resolution_path = str(state.get("artifacts", {}).get("input_resolution_path", "")).strip()
     if input_resolution_path:
@@ -459,10 +499,12 @@ def build_graph_execution_plan_for_workspace(workspace_dir: Path) -> dict[str, A
     runtime_constraints = build_runtime_constraints_for_workspace(workspace_dir)
     state = load_state(workspace_dir)
     model_root = Path(state["inputs"]["model_root_path"])
-    classified = load_json(Path(state["artifacts"]["classified_spans_path"]))
-    stack_evidence = load_json(Path(state["artifacts"]["stack_evidence_path"]))
-    graph_phase_stack_evidence = load_json(Path(state["artifacts"]["graph_phase_stack_evidence_path"]))
-    timeline_index = load_json(Path(state["artifacts"]["timeline_index_path"]))
+    classified = load_json(require_state_artifact_path(state, "classified_spans_path", "classified_spans.json"))
+    stack_evidence_path, stack_evidence = load_stack_evidence_for_graph_inventory(state)
+    graph_phase_stack_evidence = load_json(
+        require_state_artifact_path(state, "graph_phase_stack_evidence_path", "graph_phase_stack_evidence.json")
+    )
+    timeline_index = load_json(require_state_artifact_path(state, "timeline_index_path", "timeline_index.json"))
 
     launch_context = parse_launch_context(read_launch_text(state))
     launch_context["parsed_launch_fields"] = runtime_constraints.get("parsed_launch_fields", {})
@@ -496,7 +538,7 @@ def build_graph_execution_plan_for_workspace(workspace_dir: Path) -> dict[str, A
     preconditions = runtime_constraints.get("step5_preconditions", {})
     if not preconditions.get("ready", False):
         warnings.extend(str(item) for item in preconditions.get("blockers", []))
-    if not any(row.get("has_spec_v2_anchor") for row in stack_evidence.get("rows", [])):
+    if not stack_evidence_has_spec_v2_anchor(stack_evidence):
         warnings.append("stack_evidence 中未发现明确 spec-v2 anchor，当前 graph inventory 主要依赖 MODEL_EXECUTE markers、launch/context 与已分类 span。")
     if mode != "spec_v2":
         warnings.append("当前 launch/context 未能强证实 spec-v2，graph inventory 以更保守的 graph mode / phase 分类输出。")
@@ -544,11 +586,15 @@ def build_graph_execution_plan_for_workspace(workspace_dir: Path) -> dict[str, A
             }
         ],
         "mapping_hints": [],
+        "evidence_inputs": {
+            "stack_evidence_path": str(stack_evidence_path),
+            "graph_phase_stack_evidence_path": str(state["artifacts"].get("graph_phase_stack_evidence_path", "")),
+            "timeline_index_path": str(state["artifacts"].get("timeline_index_path", "")),
+        },
     }
     output_path = workspace_dir / "artifacts" / "graph" / "graph_execution_plan.json"
     dump_json(output_path, output)
     state["artifacts"]["graph_execution_plan_path"] = str(output_path)
-    state["flags"]["graph_path_built"] = True
     save_state(workspace_dir, state)
     return output
 

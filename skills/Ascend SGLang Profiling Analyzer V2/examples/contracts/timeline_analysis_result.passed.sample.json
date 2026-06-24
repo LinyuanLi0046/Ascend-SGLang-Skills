@@ -1,0 +1,34 @@
+{
+  "status": "passed",
+  "source": "timeline_analyst_step3_review_v1",
+  "base_artifacts": {
+    "classified_spans_base_path": "artifacts/classification/classified_spans.base.json",
+    "scope_gate_result_base_path": "output/scope_gate_result.base.json"
+  },
+  "review_patch_summary": {
+    "stream_update_count": 1,
+    "span_update_count": 1
+  },
+  "mutation_summary": {
+    "semantic_class_updates": 1,
+    "exclude_updates": 0,
+    "parallel_group_updates": 1
+  },
+  "streams": [
+    {
+      "stream_id": "stream_1",
+      "stream_role": "compute",
+      "review_note": "stream role kept as compute after review"
+    }
+  ],
+  "parallel_groups": [
+    {
+      "group_key": "compute_lane_a",
+      "span_count": 1
+    }
+  ],
+  "notes": [
+    "base scope gate evidence was reviewed before patch emission",
+    "no graph candidate or phase level judgment was introduced in Step 3"
+  ]
+}

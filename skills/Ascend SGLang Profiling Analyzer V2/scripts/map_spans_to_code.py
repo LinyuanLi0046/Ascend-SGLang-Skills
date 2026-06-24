@@ -5,7 +5,17 @@ import re
 from pathlib import Path
 from typing import Any
 
-from workflow_common import dump_json, iter_classified_streams, load_json, load_state, save_state, validate_code_location
+from workflow_common import (
+    collect_graph_mapping_target_ids,
+    collect_graph_operator_span_ids,
+    dump_json,
+    extract_graph_alignment_rows,
+    iter_classified_streams,
+    load_json,
+    load_state,
+    save_state,
+    validate_code_location,
+)
 
 
 def ensure(condition: bool, message: str) -> None:
@@ -17,12 +27,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="生成 span_code_mapping.json。")
     parser.add_argument("--workspace-dir", required=True)
     return parser
-
-
-def load_graph_execution_plan(path: Path) -> dict[str, Any]:
-    if not str(path) or str(path) == "." or not path.exists() or not path.is_file():
-        return {"mapping_hints": []}
-    return load_json(path)
 
 
 def load_graph_span_alignment(path: Path) -> dict[str, Any]:
@@ -68,14 +72,6 @@ TOKEN_RE = re.compile(r"[a-z0-9_./]+")
 
 def tokenize_search_text(text: str) -> set[str]:
     return {token for token in TOKEN_RE.findall(text.lower()) if len(token) >= 3}
-
-
-def extract_graph_alignment_items(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    for key in ("items", "rows"):
-        value = payload.get(key, [])
-        if isinstance(value, list):
-            return [item for item in value if isinstance(item, dict)]
-    return []
 
 
 def build_stack_search_index(stack_rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -151,15 +147,6 @@ def select_stack_candidate(span: dict[str, Any], stack_index: dict[str, Any]) ->
     return candidates[0][1] if candidates else {}
 
 
-def select_graph_hint(span: dict[str, Any], graph_plan: dict[str, Any]) -> dict[str, Any]:
-    hints = graph_plan.get("mapping_hints", [])
-    span_id = str(span.get("span_id", ""))
-    for hint in hints:
-        if span_id and span_id in hint.get("candidate_span_ids", []):
-            return hint
-    return {}
-
-
 def select_external_span_mapping(span: dict[str, Any], external_rows: dict[str, dict[str, Any]]) -> dict[str, Any]:
     return external_rows.get(str(span.get("span_id", "")), {})
 
@@ -169,6 +156,7 @@ def build_graph_alignment_support(graph_alignment_row: dict[str, Any], is_graph_
         return {
             "graph_alignment_present": False,
             "graph_alignment_support_status": "missing" if is_graph_candidate else "not_applicable",
+            "graph_alignment_consumable": False,
             "graph_alignment_location_kind": "",
             "graph_alignment_requires_further_drilldown": None,
             "graph_alignment_candidate_code_location": "",
@@ -180,14 +168,17 @@ def build_graph_alignment_support(graph_alignment_row: dict[str, Any], is_graph_
     location_kind = str(graph_alignment_row.get("location_kind", "")).strip()
     requires_further_drilldown = graph_alignment_row.get("requires_further_drilldown")
     operator_ref_valid = graph_alignment_row.get("_operator_ref_valid")
-    support_status = "intermediate_alignment_retained"
+    support_status = "non_consumable_alignment"
+    consumable = False
     if operator_ref_valid is False:
         support_status = "invalid_operator_span_reference"
     elif location_kind == "operator_call" and requires_further_drilldown is False:
         support_status = "final_operator_call"
+        consumable = True
     return {
         "graph_alignment_present": True,
         "graph_alignment_support_status": support_status,
+        "graph_alignment_consumable": consumable,
         "graph_alignment_location_kind": location_kind,
         "graph_alignment_requires_further_drilldown": requires_further_drilldown,
         "graph_alignment_candidate_code_location": str(graph_alignment_row.get("code_location", "")).strip(),
@@ -202,7 +193,6 @@ def build_row(
     span: dict[str, Any],
     external_span_mapping_row: dict[str, Any],
     stack_candidate: dict[str, Any],
-    graph_hint: dict[str, Any],
     graph_alignment_row: dict[str, Any],
     is_graph_candidate: bool,
 ) -> dict[str, Any]:
@@ -226,17 +216,20 @@ def build_row(
                 mapping_basis.append("external_span_mapping")
                 evidence_sources.append("external_span_mapping.json")
         elif graph_alignment_row:
-            if str(graph_alignment_row.get("location_kind", "")).strip() == "operator_call":
+            phase = str(graph_alignment_row.get("phase", phase))
+            if graph_alignment_support["graph_alignment_consumable"]:
                 code_location = str(graph_alignment_row.get("code_location", "")).strip()
                 confidence = str(graph_alignment_row.get("confidence", "high"))
                 mapped_region = str(graph_alignment_row.get("mapped_region", ""))
                 owner_class = str(graph_alignment_row.get("owner_class", "model_forward"))
-                phase = str(graph_alignment_row.get("phase", phase))
                 mapping_basis.extend(graph_alignment_row.get("mapping_basis", []))
                 evidence_sources.extend(graph_alignment_row.get("evidence_sources", []))
             else:
+                location_kind = str(graph_alignment_row.get("location_kind", "")).strip() or "<missing>"
+                drilldown_state = graph_alignment_row.get("requires_further_drilldown")
                 notes = [
-                    "graph span alignment 尚未达到 operator_call 精度；Step6 不会把 phase marker / replay entry 写成正式 graph code mapping。"
+                    "graph span alignment 尚未成为可消费的正式 Step5 结果；Step6 不会把非 operator_call 或仍需 drilldown 的 graph 条目写成正式 code mapping。",
+                    f"current_graph_alignment location_kind={location_kind}, requires_further_drilldown={drilldown_state!r}",
                 ]
                 graph_alignment_row = {**graph_alignment_row, "_mapping_notes": notes}
         if not code_location and stack_candidate and not is_graph_candidate:
@@ -310,7 +303,6 @@ def main() -> int:
     stack_evidence_path = resolve_stack_evidence_path(state)
     stack_evidence = load_json(stack_evidence_path)
     external_span_mapping = load_external_span_mapping(Path(state["artifacts"].get("external_span_mapping_path", "")))
-    graph_plan = load_graph_execution_plan(Path(state["artifacts"].get("graph_execution_plan_path", "")))
     graph_alignment = load_graph_span_alignment(Path(state["artifacts"].get("graph_span_alignment_path", "")))
     graph_operator_spans = load_graph_operator_spans(Path(state["artifacts"].get("graph_operator_spans_path", "")))
     graph_mapping_targets = load_graph_mapping_targets(Path(state["artifacts"].get("graph_mapping_targets_path", "")))
@@ -324,7 +316,7 @@ def main() -> int:
     low_confidence_span_count = 0
     graph_candidate_span_count = 0
     graph_final_operator_call_count = 0
-    graph_intermediate_alignment_retained_count = 0
+    graph_non_consumable_alignment_count = 0
     graph_missing_alignment_count = 0
     graph_invalid_operator_ref_count = 0
 
@@ -333,22 +325,14 @@ def main() -> int:
     external_mapping_by_span = {
         str(row.get("span_id", "")): row for row in external_span_mapping.get("rows", []) if str(row.get("span_id", "")).strip()
     }
-    graph_alignment_items = extract_graph_alignment_items(graph_alignment)
+    graph_alignment_items = extract_graph_alignment_rows(graph_alignment)
     graph_alignment_by_span = {
         str(row.get("span_id", "")).strip(): row
         for row in graph_alignment_items
         if str(row.get("span_id", "")).strip()
     }
-    graph_operator_span_ids = {
-        str(row.get("graph_operator_span_id", "")).strip()
-        for row in graph_operator_spans.get("rows", [])
-        if isinstance(row, dict) and str(row.get("graph_operator_span_id", "")).strip()
-    }
-    graph_mapping_target_span_ids = {
-        str(row.get("span_id", "")).strip()
-        for row in graph_mapping_targets.get("rows", [])
-        if isinstance(row, dict) and str(row.get("span_id", "")).strip()
-    }
+    graph_operator_span_ids = collect_graph_operator_span_ids(graph_operator_spans)
+    graph_mapping_target_span_ids = collect_graph_mapping_target_ids(graph_mapping_targets)
     classified_path = Path(state["artifacts"]["classified_spans_path"])
     for stream in iter_classified_streams(classified_path):
         for span in stream.get("spans", []):
@@ -359,7 +343,6 @@ def main() -> int:
                 semantic_span_count += 1
             external_span_mapping_row = select_external_span_mapping(span, external_mapping_by_span)
             stack_candidate = {} if span.get("exclude_from_code_mapping") else select_stack_candidate(span, stack_index)
-            graph_hint = select_graph_hint(span, graph_plan)
             graph_alignment_row = graph_alignment_by_span.get(span["span_id"], {})
             if graph_alignment_row:
                 graph_operator_span_id = str(graph_alignment_row.get("graph_operator_span_id", "")).strip()
@@ -382,7 +365,6 @@ def main() -> int:
                 span,
                 external_span_mapping_row,
                 stack_candidate,
-                graph_hint,
                 graph_alignment_row,
                 is_graph_candidate,
             )
@@ -391,8 +373,8 @@ def main() -> int:
             support_status = str(row.get("graph_alignment_support_status", "")).strip()
             if support_status == "final_operator_call":
                 graph_final_operator_call_count += 1
-            elif support_status == "intermediate_alignment_retained":
-                graph_intermediate_alignment_retained_count += 1
+            elif support_status == "non_consumable_alignment":
+                graph_non_consumable_alignment_count += 1
             elif support_status == "missing":
                 graph_missing_alignment_count += 1
             elif support_status == "invalid_operator_span_reference":
@@ -414,7 +396,7 @@ def main() -> int:
         "low_confidence_span_count": low_confidence_span_count,
         "graph_candidate_span_count": graph_candidate_span_count,
         "graph_final_operator_call_count": graph_final_operator_call_count,
-        "graph_intermediate_alignment_retained_count": graph_intermediate_alignment_retained_count,
+        "graph_non_consumable_alignment_count": graph_non_consumable_alignment_count,
         "graph_missing_alignment_count": graph_missing_alignment_count,
         "graph_invalid_operator_ref_count": graph_invalid_operator_ref_count,
     }

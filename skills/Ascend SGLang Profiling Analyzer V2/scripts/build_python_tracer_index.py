@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import time
 from pathlib import Path
 from typing import Any
 
@@ -57,6 +58,7 @@ def _to_repo_relative(repo_root: Path, frame_path: str) -> str:
 
 
 def build_python_tracer_index_for_workspace(workspace_dir: Path) -> dict[str, Any]:
+    stage_start = time.perf_counter()
     state = load_state(workspace_dir)
     artifacts = state["artifacts"]
     repo_root = Path(state["inputs"]["code_repo_path"])
@@ -78,6 +80,11 @@ def build_python_tracer_index_for_workspace(workspace_dir: Path) -> dict[str, An
     for source_label, source_path in [("hash", hash_path), ("func", func_path)]:
         if source_path is None:
             continue
+        print(
+            f"[build_python_tracer_index] 开始读取 {source_label} tracer 文件: {source_path}",
+            flush=True,
+        )
+        source_start = time.perf_counter()
         for chunk in _extract_printable_chunks(source_path):
             match = FRAME_RE.search(chunk)
             if not match:
@@ -103,6 +110,10 @@ def build_python_tracer_index_for_workspace(workspace_dir: Path) -> dict[str, An
                     "frame_class": frame_class,
                 }
             )
+        print(
+            f"[build_python_tracer_index] 完成读取 {source_label} tracer 文件，耗时={time.perf_counter() - source_start:.2f}s",
+            flush=True,
+        )
 
     repo_frames = [frame for frame in frames if frame["frame_class"] == "repo_python"]
     parse_status = "passed"
@@ -131,10 +142,16 @@ def build_python_tracer_index_for_workspace(workspace_dir: Path) -> dict[str, An
     }
 
     output_path = workspace_dir / "artifacts" / "stacks" / "python_tracer_index.json"
+    print("[build_python_tracer_index] 开始写出 python_tracer_index.json", flush=True)
     dump_json(output_path, output)
     artifacts["python_tracer_index_path"] = str(output_path)
     state["flags"]["python_tracer_index_built"] = True
     save_state(workspace_dir, state)
+    print(
+        f"[build_python_tracer_index] 完成，耗时={time.perf_counter() - stage_start:.2f}s "
+        f"(total_frames={len(frames)}, repo_frames={len(repo_frames)}, status={parse_status})",
+        flush=True,
+    )
     return output
 
 

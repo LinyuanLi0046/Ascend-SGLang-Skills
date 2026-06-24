@@ -25,7 +25,7 @@ def load_events(path: Path) -> list[dict[str, Any]]:
 def build_graph_support_summary(mapping_rows: list[dict[str, Any]]) -> dict[str, Any]:
     support_status_breakdown: dict[str, int] = {}
     location_kind_breakdown: dict[str, int] = {}
-    retained_candidate_code_location_count = 0
+    non_consumable_candidate_code_location_count = 0
     for row in mapping_rows:
         support_status = str(row.get("graph_alignment_support_status", "")).strip()
         location_kind = str(row.get("graph_alignment_location_kind", "")).strip()
@@ -35,11 +35,12 @@ def build_graph_support_summary(mapping_rows: list[dict[str, Any]]) -> dict[str,
         if location_kind:
             location_kind_breakdown[location_kind] = location_kind_breakdown.get(location_kind, 0) + 1
         if candidate_code_location and support_status and support_status != "final_operator_call":
-            retained_candidate_code_location_count += 1
+            non_consumable_candidate_code_location_count += 1
     return {
+        "graph_mapping_consumption_mode": "consume_only",
         "support_status_breakdown": support_status_breakdown,
         "location_kind_breakdown": location_kind_breakdown,
-        "retained_candidate_code_location_count": retained_candidate_code_location_count,
+        "non_consumable_candidate_code_location_count": non_consumable_candidate_code_location_count,
     }
 
 
@@ -74,10 +75,13 @@ def main() -> int:
         unresolved_semantic_span_count = coverage.get("unmapped_semantic_span_count", 0)
     if int(unresolved_semantic_span_count) > 0:
         warnings.append("仍存在未映射的语义 span。")
+    if warnings:
+        warnings.append("Step6 仅消费 Step4/Step5 的正式 mapping，不执行 graph mapping 修复或补洞。")
 
     result = {
         "status": "passed",
         "step": 6,
+        "graph_mapping_consumption_mode": "consume_only",
         "annotated_trace_stats": {
             "mapped_event_count": mapped_event_count,
             "args_code_location_count": args_code_location_count,

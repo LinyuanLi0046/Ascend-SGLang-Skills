@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -50,9 +51,14 @@ def has_stream_id(event_args: dict[str, Any]) -> bool:
     return False
 
 
+def log(message: str) -> None:
+    print(f"[write_preprocess_step1_outputs] {message}", flush=True)
+
+
 def main() -> int:
     args = build_parser().parse_args()
     workspace_dir = Path(args.workspace_dir)
+    step_start = time.perf_counter()
     state = load_state(workspace_dir)
     artifacts = state["artifacts"]
 
@@ -70,13 +76,28 @@ def main() -> int:
         workspace_dir, state, "op_summary_slice_path", "artifacts/slices/op_summary_slice.csv"
     )
 
+    log("开始加载 Step 1 切片 CSV")
+    csv_stage_start = time.perf_counter()
     kernel_rows = load_csv_rows(kernel_path)
     operator_rows = load_csv_rows(operator_path)
     task_time_rows = load_csv_rows(task_time_path)
     op_summary_rows = load_csv_rows(op_summary_path)
+    log(
+        f"CSV 加载完成，耗时={time.perf_counter() - csv_stage_start:.2f}s "
+        f"(kernel={len(kernel_rows)}, operator={len(operator_rows)}, task_time={len(task_time_rows)}, op_summary={len(op_summary_rows)})"
+    )
+    log("开始构建 python tracer index")
+    tracer_stage_start = time.perf_counter()
     python_tracer_index = build_python_tracer_index_for_workspace(workspace_dir)
+    log(
+        f"python tracer index 构建完成，耗时={time.perf_counter() - tracer_stage_start:.2f}s "
+        f"(status={python_tracer_index.get('status')}, total_frames={python_tracer_index.get('stats', {}).get('total_frame_count', 0)})"
+    )
     state = load_state(workspace_dir)
+    log("开始加载 trace_slice.json 统计信息")
+    trace_stage_start = time.perf_counter()
     trace_events = load_trace_events(trace_path)
+    log(f"trace_slice.json 加载完成，耗时={time.perf_counter() - trace_stage_start:.2f}s (events={len(trace_events)})")
 
     slice_counts = {
         "trace_events": len(trace_events),
@@ -149,6 +170,7 @@ def main() -> int:
     }
 
     result_path = workspace_dir / "output" / "preprocess_step1_result.json"
+    log("开始写 preprocess_step1_result.json")
     dump_json(result_path, result)
     report_path = workspace_dir / "output" / "preprocess_step1_report.md"
     report_lines = [
@@ -168,6 +190,7 @@ def main() -> int:
     ]
     if warnings:
         report_lines.append(f"- Warnings: {warnings}")
+    log("开始写 preprocess_step1_report.md")
     write_text(report_path, "\n".join(report_lines) + "\n")
 
     state["flags"]["slicing_done"] = True
@@ -176,7 +199,9 @@ def main() -> int:
     state["artifacts"]["operator_slice_path"] = str(operator_path)
     state["artifacts"]["task_time_slice_path"] = str(task_time_path)
     state["artifacts"]["op_summary_slice_path"] = str(op_summary_path)
+    log("开始回写 Step 1 状态位与 artifacts")
     save_state(workspace_dir, state)
+    log(f"Step 1 正式结果写出完成，总耗时={time.perf_counter() - step_start:.2f}s")
     return 0
 
 

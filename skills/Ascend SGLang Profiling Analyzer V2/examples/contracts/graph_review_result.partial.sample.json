@@ -4,8 +4,8 @@
   "reviewed_mapping_granularity": "per_span_forward_code",
   "review_summary": "Most graph spans are aligned, but several operator calls still require drilldown.",
   "blocking_issues": [
-    "verify phase still contains module_call_anchor entries.",
-    "draft_decode cache path needs one more repo-level confirmation."
+    "One template still stops at a module-call boundary.",
+    "Another template still needs a final local branch explanation."
   ],
   "knowledge_reference_check": {
     "model_config_and_launch_fields_read": true,
@@ -19,13 +19,13 @@
     "status": "partial",
     "summary": "One path still stops at a module boundary.",
     "violations": [
-      "verify span s_000031 still requires internal drilldown."
+      "One aligned row still requires internal drilldown."
     ]
   },
   "repo_file_evidence_check": {
     "checked_against_repo_divergence_report": true,
     "existing_files_relied_on": [
-      "python/sglang/srt/model_executor/model_runner.py"
+      "REPLACE_WITH_REAL_REPO_FILE.py"
     ],
     "missing_files_relied_on": [],
     "contradictions": []
@@ -40,26 +40,103 @@
     },
     "distinctive_kernel_anchors": [
       {
-        "phase": "verify",
-        "graph_operator_span_id": "graph_operator_span_00001",
+        "phase": "phase_a",
+        "graph_operator_span_id": "graph_operator_span_x",
         "anchor_kind": "distinctive_kernel"
       }
     ],
     "pattern_segments": [
       {
-        "phase": "verify",
-        "segment_id": "verify_seg_0001",
+        "phase": "phase_a",
+        "segment_id": "segment_x",
         "pattern_kind": "repetitive_operator_sequence"
       }
     ]
   },
+  "unresolved_template_summary": [
+    {
+      "template_key": "template_a",
+      "phase": "phase_a",
+      "semantic_class": "communication",
+      "affected_span_count": 12,
+      "example_span_ids": [
+        "span_a_1",
+        "span_a_2"
+      ],
+      "stuck_at": "final_operator_selection",
+      "why_not_freezable": "Current evidence narrows the path to a small local decision area but does not yet uniquely freeze the final operator callsite.",
+      "remaining_candidate_types": [
+        "operator_call",
+        "neighbor_operator_call"
+      ],
+      "requires_repo_read_more": true,
+      "requires_runtime_confirmation": false
+    },
+    {
+      "template_key": "template_b",
+      "phase": "phase_b",
+      "semantic_class": "compute",
+      "affected_span_count": 3,
+      "example_span_ids": [
+        "span_b_1"
+      ],
+      "stuck_at": "branch_selection",
+      "why_not_freezable": "The analyzer has not yet discharged the last branch-selection explanation between nearby local paths.",
+      "remaining_candidate_types": [
+        "branch_a",
+        "branch_b"
+      ],
+      "requires_repo_read_more": true,
+      "requires_runtime_confirmation": false
+    }
+  ],
+  "remaining_candidates_summary": [
+    {
+      "template_key": "template_a",
+      "affected_span_count": 12,
+      "candidate_code_locations": [
+        {
+          "code_location": "REPLACE_WITH_REAL_REPO_FILE.py:123",
+          "kind": "operator_call",
+          "why_possible": "This candidate matches the phase-local ordered operator pattern and backend helper path."
+        },
+        {
+          "code_location": "REPLACE_WITH_REAL_REPO_FILE.py:129",
+          "kind": "operator_call",
+          "why_possible": "This nearby candidate remains plausible after repo drilldown and belongs to the same local decision area."
+        }
+      ],
+      "why_candidates_remain_tied": "Phase, backend and nearby sequence evidence all narrow the path to these two lines, but the current evidence still cannot discharge the last local branch decision."
+    }
+  ],
+  "elimination_attempts": [
+    {
+      "dimension": "phase_basis",
+      "attempted_on_templates": [
+        "template_a"
+      ],
+      "outcome": "Competing candidates outside the selected phase window were removed."
+    },
+    {
+      "dimension": "sequence_basis",
+      "attempted_on_templates": [
+        "template_a"
+      ],
+      "outcome": "Ordered operator sequence removed earlier/later neighborhood candidates but left two adjacent operator_call rows tied."
+    }
+  ],
+  "non_disambiguating_evidence": [
+    "The current graph-capture evidence does not provide a final local branch discriminator between REPLACE_WITH_REAL_REPO_FILE.py:123 and REPLACE_WITH_REAL_REPO_FILE.py:129.",
+    "Existing repo code search, phase evidence and ordered span neighborhood checks were already consumed."
+  ],
+  "why_further_inference_is_not_possible": "Within the current repo snapshot and profiling artifacts, the remaining two operator_call candidates for template_a stay equally plausible after phase, sequence and backend-based elimination. No stronger discriminator is available without new evidence.",
   "span_alignment": {
     "status": "partial",
     "row_count": 1,
     "rows": [
       {
-        "span_id": "s_000031",
-        "graph_operator_span_id": "graph_operator_span_00001",
+        "span_id": "span_x",
+        "graph_operator_span_id": "graph_operator_span_x",
         "location_kind": "module_call_anchor",
         "operator_evidence_kind": "torch_call",
         "requires_further_drilldown": true
@@ -71,7 +148,7 @@
       "status": "partial",
       "mapping_granularity": "per_span_forward_code",
       "identified_graph_span_ids": [
-        "s_000031"
+        "span_x"
       ]
     },
     "graph_forward_context_updates": {
@@ -83,8 +160,8 @@
       "row_count": 1,
       "rows": [
         {
-          "phase": "verify",
-          "span_id": "s_000031"
+          "phase": "phase_a",
+          "span_id": "span_x"
         }
       ]
     },
@@ -93,21 +170,8 @@
       "row_count": 1,
       "rows": [
         {
-          "phase": "verify",
-          "template_id": "verify_0001"
-        }
-      ]
-    },
-    "graph_span_alignment_payload": {
-      "status": "partial",
-      "row_count": 1,
-      "rows": [
-        {
-          "span_id": "s_000031",
-          "graph_operator_span_id": "graph_operator_span_00001",
-          "location_kind": "module_call_anchor",
-          "operator_evidence_kind": "torch_call",
-          "requires_further_drilldown": true
+          "phase": "phase_a",
+          "template_id": "template_group_a"
         }
       ]
     }

@@ -12,6 +12,7 @@
 - 你负责把已有 mapping / graph / classification 中间结果渲染为正式交付物。
 - 你是脚本型子 agent，但本 step 必须通过单一 wrapper 脚本执行完整流水线。
 - 你禁止重新做 Step 3-5 的专业判断，禁止推进全局 step，禁止直接执行 final gate。
+- 你不负责 graph expansion、graph drilldown、graph code_location 修复或任何 graph mapping 补洞。
 
 ## 3. 硬约束
 
@@ -20,6 +21,13 @@
 - 你禁止修改 `classified_spans.json`、`stack_evidence.json`、`graph_span_alignment.json` 等前置输入工件。
 - 你禁止重新做 Step 3-5 的语义判断，或补写任何非 Step 6 范围的中间产物。
 - 你必须以 `audit/dispatch_artifact_renderer.json` 中的 `allowed_status` 为最终准绳。
+- 允许只读诊断当前 wrapper 是否仍在运行，例如查看 `audit/step6_in_progress.json`、`logs/wrapper_runs/step6_*.combined.log`、`logs/wrapper_runs/step6_*.meta.json`、以及目标 artifacts 是否已生成；但这些诊断不能升级为补跑或改写工件。
+- 对 `scripts/run_step6_render_pipeline.py`，你只能用单条 blocking 命令直接运行；禁止 `Start-Process`、`Start-Job`、`cmd /c start`、后台 detached 运行，禁止生成 `.ps1/.cmd` 临时包装脚本。
+- 若 `logs/wrapper_runs/step6_wrapper.lock.json` 显示已有活跃实例，禁止再次启动 Step 6 wrapper；只能等待当前实例完成或只读查看执行日志。
+- 对 Step 6 这类长耗时、会拉起子进程的 wrapper，终端 `exit code` 不是最终完成信号。
+- 若终端显示命令结束、CLI 显示 `exit code=0`，但 `step6_wrapper.lock.json` 仍为 `running`，必须优先以 wrapper lock 与 child 日志判断真实状态，不得据此判成功、判失败或重跑。
+- 只要 `step6_wrapper.lock.json` 仍为 `running`，就不得仅因长时间无新 stdout、无新交付物、`idle_seconds` 偏大或 CLI 长时间不刷屏而判失败。
+- 只有当 `step6_wrapper.lock.json` 明确收口为 `passed` / `failed`，或 lock、`step6_in_progress.json`、子日志、正式渲染工件共同证明流程已结束时，才允许判定 Step 6 完成。
 
 ## 4. 正式输入
 
@@ -75,8 +83,13 @@
 1. 先确认当前是 Step 6。
 2. 读取正式输入工件，确认 graph 与非 graph 的前置结果都已存在，特别是 graph 外正式定位结果 `external_span_mapping.json` 已就绪。
 3. 只能运行 `scripts/run_step6_render_pipeline.py --workspace-dir <workspace>`，禁止自行拆开逐条运行 Step 6 内部脚本。
-4. wrapper 会先检查 `graph_mapping_targets.json`、`graph_execution_plan.json`、`graph_operator_spans.json` 与 `graph_span_alignment.json` 是否可被 Step 6 正式消费；若 `graph_mapping_targets.json.rows` 为空、`graph_span_alignment` 仍缺少逐 span items/rows、缺少 `span_id` / `graph_operator_span_id`，或 `graph_operator_span_id` 无法回溯到 `graph_operator_spans.json`，必须立即失败。
-5. wrapper 会顺序执行 `map_spans_to_code.py`、`annotate_trace_view.py`、`render_stream_span_timeline.py`、`write_render_outputs.py`，并在每一步后做文件与 state 回写校验，同时输出阶段日志与耗时。
+4. wrapper 会先检查 `graph_mapping_targets.json`、`graph_execution_plan.json`、`graph_operator_spans.json` 与 `graph_span_alignment.json` 是否可被 Step 6 正式消费；若 `graph_mapping_targets.json.rows` 为空、`graph_span_alignment` 仍缺少逐 span rows、缺少 `span_id` / `graph_operator_span_id`、`code_location` 不是 `file:line`，或 `graph_operator_span_id` 无法回溯到 `graph_operator_spans.json`，必须立即失败。
+5. wrapper 会先执行前置输入校验，再顺序执行 `map_spans_to_code.py`、`annotate_trace_view.py`、`render_stream_span_timeline.py`、`write_render_outputs.py`，并在每一步后做文件与 state 回写校验，同时输出阶段日志与耗时。
+   同时 wrapper 会为每个子脚本记录 `logs/wrapper_runs/step6_<script>.combined.log` 与 `logs/wrapper_runs/step6_<script>.meta.json`，并持续维护 `audit/step6_in_progress.json`。
+   `step6_in_progress.json` 会暴露 `current_child_script`、`current_child_log_path`、`stage_phase`、`heartbeat_count`、`output_line_count`、`idle_seconds` 等运行态字段。
+   Step 6 wrapper 入口还会维护 `logs/wrapper_runs/step6_wrapper.lock.json`；若检测到已有活跃实例，新的调用会立即失败并提示禁止重跑。
+   若终端界面先显示 `exit code=0`，但 `step6_wrapper.lock.json` 仍为 `running`，必须继续视为 Step 6 未完成。
+   只要 lock 仍为 `running`，就不得仅因长时间无新 stdout、无新交付物或 `idle_seconds` 偏大而判失败。
 6. 若 wrapper 失败，必须直接停止并返回失败，不要在子 agent 内做临时 debug 推理或自行重排执行顺序。
 7. 检查三个正式交付物都已生成，且 `trace_view.annotated.json` 中 `code_location` 只写在 `event.args.code_location`。
 8. 正式 JSON 中的 `status` 必须属于本次 dispatch 的 `allowed_status`。
@@ -94,7 +107,7 @@
 - 你不得把 `stack_call_paths.json` 当成 Step 6 的正式强依赖。
 - 你不得为了渲染正式交付物而在 Step 6 整体加载超大 `stack_call_paths.json`。
 - 若 graph 外 `external_span_mapping.json` 与 graph 内 `graph_span_alignment.json` 已完整可用，Step 6 就应直接基于这两类正式结果生成交付物。
-- 若 `graph_mapping_targets.json` 为空，或 graph 内 `graph_span_alignment.json` 不可消费，或其条目仍不是 `operator_call` / 仍需 `requires_further_drilldown`，Step 6 必须直接失败；不得再退回旧 `graph_execution_plan` frozen scope、phase-level graph hint 或静默全量 stack 扫描来掩盖 Step5 问题。
+- 若 `graph_mapping_targets.json` 为空，或 graph 内 `graph_span_alignment.json` 不可消费，或其条目仍不是 `operator_call` / 仍需 `requires_further_drilldown` / 仍停在 module_call_anchor、constructor、replay 入口，Step 6 必须直接失败；不得再退回旧 `graph_execution_plan` frozen scope、phase-level graph hint、template expansion 或静默全量 stack 扫描来掩盖 Step5 问题。
 
 ## 8. 主 agent 如何编排你
 
@@ -105,8 +118,9 @@
 
 你返回后，主 agent 会运行：
 
-- `scripts/record_subagent_completion.py --agent-name artifact_renderer`
+- `scripts/record_subagent_completion.py --agent-name artifact_renderer --task-call-id <task_agent_id>`
 - `scripts/finalize_agent_dispatch.py --agent-name artifact_renderer`
+- 至少更新 `findings.md` 或 `progress.md`；若 `state.flags.task_plan_refresh_required=true`，还要同步更新 `task_plan.md`
 - `scripts/mark_step_complete.py --step 6`
 
 ## 9. 禁止调用的脚本

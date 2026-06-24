@@ -39,6 +39,8 @@ RUNTIME_KEYWORDS = [
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="生成初版 classified_spans.json。")
     parser.add_argument("--workspace-dir", required=True)
+    parser.add_argument("--output-path", default="")
+    parser.add_argument("--write-state", default="true")
     return parser
 
 
@@ -140,12 +142,19 @@ def build_parallel_groups(spans: list[dict[str, Any]]) -> dict[str, str]:
     return result
 
 
-def main() -> int:
-    args = build_parser().parse_args()
-    workspace_dir = Path(args.workspace_dir)
-    state = load_state(workspace_dir)
-    timeline_index = load_json(Path(state["artifacts"]["timeline_index_path"]))
-    trace_events = load_trace_events(Path(state["artifacts"]["trace_slice_path"]))
+def parse_bool_flag(value: str) -> bool:
+    normalized_value = str(value).strip().lower()
+    if normalized_value in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized_value in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"无法解析布尔参数: {value!r}")
+
+
+def build_classified_spans_payload(
+    timeline_index: dict[str, Any],
+    trace_events: list[dict[str, Any]],
+) -> dict[str, Any]:
     tasks_by_stream, ops_by_task = build_related_maps(timeline_index)
 
     stream_spans: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -253,12 +262,35 @@ def main() -> int:
         "excluded_span_count": excluded_span_count,
         "scope_summary": scope_summary,
     }
-    output_path = workspace_dir / "artifacts" / "classification" / "classified_spans.json"
-    dump_json(output_path, output)
-    state["artifacts"]["classified_spans_path"] = str(output_path)
-    state["flags"]["classification_done"] = True
-    state["flags"]["hardware_scope_classified"] = True
-    save_state(workspace_dir, state)
+    return output
+
+
+def classify_spans_for_workspace(
+    workspace_dir: Path,
+    *,
+    output_path: Path | None = None,
+    write_state: bool = True,
+) -> dict[str, Any]:
+    state = load_state(workspace_dir)
+    timeline_index = load_json(Path(state["artifacts"]["timeline_index_path"]))
+    trace_events = load_trace_events(Path(state["artifacts"]["trace_slice_path"]))
+    output = build_classified_spans_payload(timeline_index, trace_events)
+    resolved_output_path = output_path or (workspace_dir / "artifacts" / "classification" / "classified_spans.json")
+    dump_json(resolved_output_path, output)
+    if write_state:
+        state["artifacts"]["classified_spans_path"] = str(resolved_output_path)
+        state["flags"]["classification_done"] = True
+        state["flags"]["hardware_scope_classified"] = True
+        save_state(workspace_dir, state)
+    return output
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    workspace_dir = Path(args.workspace_dir)
+    output_path = Path(args.output_path) if str(args.output_path).strip() else None
+    write_state = parse_bool_flag(args.write_state)
+    classify_spans_for_workspace(workspace_dir, output_path=output_path, write_state=write_state)
     return 0
 
 

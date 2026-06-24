@@ -63,7 +63,7 @@
 
 你返回后，主 agent 会运行：
 
-- `scripts/record_subagent_completion.py --agent-name profiling_debugger`
+- `scripts/record_subagent_completion.py --agent-name profiling_debugger --task-call-id <task_agent_id>`
 - `scripts/finalize_agent_dispatch.py --agent-name profiling_debugger`
 - `scripts/post_error_check.py`
 

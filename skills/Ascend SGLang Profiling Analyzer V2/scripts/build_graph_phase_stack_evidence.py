@@ -44,14 +44,32 @@ def _normalize_phase_rows(rows: Any) -> list[dict[str, Any]]:
     return normalized
 
 
+def _resolve_stack_evidence_source(state: dict[str, Any]) -> tuple[Path, dict[str, Any]]:
+    artifacts = state.setdefault("artifacts", {})
+    candidate_keys = ("stack_evidence_lite_path", "stack_evidence_path")
+    last_path: Path | None = None
+    for artifact_key in candidate_keys:
+        candidate_str = str(artifacts.get(artifact_key, "")).strip()
+        if not candidate_str:
+            continue
+        candidate_path = Path(candidate_str)
+        last_path = candidate_path
+        if not candidate_path.exists() or not candidate_path.is_file():
+            continue
+        payload = _safe_load_json(str(candidate_path))
+        if not isinstance(payload, dict):
+            continue
+        if isinstance(payload.get("graph_phase_marker_rows"), list) or isinstance(payload.get("graph_replay_rows"), list):
+            return candidate_path, payload
+    if last_path is not None:
+        raise RuntimeError(f"缺少可用 stack_evidence 输入: {last_path}")
+    raise RuntimeError("缺少 stack_evidence_lite.json / stack_evidence.json，无法构建 graph_phase_stack_evidence。")
+
+
 def build_graph_phase_stack_evidence_for_workspace(workspace_dir: Path) -> dict[str, Any]:
     state = load_state(workspace_dir)
     artifacts = state.setdefault("artifacts", {})
-    stack_evidence_path = Path(str(artifacts.get("stack_evidence_path", "")).strip())
-    if not stack_evidence_path.exists():
-        raise RuntimeError(f"缺少 stack_evidence.json: {stack_evidence_path}")
-
-    stack_evidence = _safe_load_json(str(stack_evidence_path))
+    stack_evidence_path, stack_evidence = _resolve_stack_evidence_source(state)
     phase_rows = _normalize_phase_rows(
         stack_evidence.get("graph_phase_marker_rows", stack_evidence.get("graph_replay_rows", []))
     )

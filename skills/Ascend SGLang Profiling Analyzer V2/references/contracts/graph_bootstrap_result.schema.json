@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "graph_bootstrap_result",
+  "type": "object",
+  "required": [
+    "status",
+    "step",
+    "substep",
+    "bootstrap_target",
+    "expected_script_sequence",
+    "wrapper_lock_path",
+    "wrapper_lock_status",
+    "wrapper_status_path",
+    "wrapper_status_exists",
+    "wrapper_log_path",
+    "wrapper_meta_path",
+    "current_or_final_stage",
+    "required_artifacts_ready",
+    "required_flags_ready",
+    "ready_summary",
+    "blocking_issues"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["passed"]
+    },
+    "step": {
+      "type": "integer",
+      "const": 5
+    },
+    "substep": {
+      "type": "string",
+      "const": "A"
+    },
+    "bootstrap_target": {
+      "type": "string",
+      "enum": ["step5_graph_path_analyst"]
+    },
+    "expected_script_sequence": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "wrapper_lock_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "wrapper_lock_status": {
+      "type": "string",
+      "enum": ["passed"]
+    },
+    "wrapper_status_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "wrapper_status_exists": {
+      "type": "boolean"
+    },
+    "wrapper_log_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "wrapper_meta_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "current_or_final_stage": {
+      "type": "string"
+    },
+    "required_artifacts_ready": {
+      "type": "boolean",
+      "const": true
+    },
+    "required_flags_ready": {
+      "type": "boolean",
+      "const": true
+    },
+    "ready_summary": {
+      "type": "object",
+      "required": [
+        "bootstrap_target",
+        "required_artifacts_ready",
+        "required_flags_ready",
+        "ready",
+        "artifacts",
+        "flags",
+        "missing_artifacts",
+        "missing_flags"
+      ],
+      "properties": {
+        "bootstrap_target": {
+          "type": "string",
+          "enum": ["step5_graph_path_analyst"]
+        },
+        "required_artifacts_ready": {
+          "type": "boolean"
+        },
+        "required_flags_ready": {
+          "type": "boolean"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "artifacts": {
+          "type": "array"
+        },
+        "flags": {
+          "type": "array"
+        },
+        "missing_artifacts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "missing_flags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": true
+    },
+    "blocking_issues": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "additionalProperties": true
+}

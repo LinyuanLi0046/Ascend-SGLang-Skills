@@ -24,11 +24,11 @@
 
 1. Step 1：发现输入并切片 profiling 数据
 2. Step 2：构建统一时间索引 `timeline_index.json`
-3. Step 3：做时序语义分类，产出 `classified_spans.json`
+3. Step 3：由 `timeline_analyst` 通过 wrapper 生成 base classified/scope gate，再输出 review patch，并由 finalize promotion 成 canonical `classified_spans.json`
 4. Step 4：完成 graph 外 stack 映射，并生成 graph phase stack 证据
-5. Step 5：完成 graph 内路径重建与逐 span 对齐
-6. Step 6：渲染正式交付物
-7. Step 7：验证正式交付物并通过最终门禁
+5. Step 5：完成 graph 内 formal spans 的正式逐 span code mapping
+6. Step 6：只消费正式 mapping 并渲染正式交付物
+7. Step 7：执行正式验收，final gate 只做重复收口
 
 更详细的分步说明见：
 
@@ -55,7 +55,7 @@ Ascend SGLang Profiling Analyzer V2/
 - `references/agents/`
   - 各子 agent 的唯一正式操作手册
 - `references/contracts/`
-  - Step 4 / Step 5 等正式 JSON 合同与结构约束
+  - Step 3 / Step 4 / Step 5 等正式 JSON 合同与结构约束
 - `references/knowledge/`
   - graph path / launch / model config 等知识文档
 - `references/shared/`
@@ -72,15 +72,20 @@ Ascend SGLang Profiling Analyzer V2/
 - 必须走真实主链：
   - `scripts/prepare_agent_dispatch.py`
   - `Task(...)`
-  - `scripts/record_subagent_completion.py`
+  - `scripts/record_subagent_completion.py --task-call-id <task_agent_id>`
   - `scripts/finalize_agent_dispatch.py`
   - `scripts/mark_step_complete.py`
 - 不允许伪造子 agent 输出，也不允许跳过 completion/finalize 闭环。
+- dispatch 现在会显式携带 `main_agent_role`、`subagent_role`、`allowed_official_scripts`、`task_required`、`task_receipt_required`；completion/finalize 会强制校验这些字段的一致性。
 - Step 4 / Step 5 的正式 JSON 输出必须满足对应合同：
+  - `references/contracts/timeline_review_patch.schema.json`
+  - `references/contracts/timeline_analysis_result.schema.json`
   - `references/contracts/stack_mapping_result.schema.json`
   - `references/contracts/graph_review_result.schema.json`
 - Step 5 的 `graph_review_result.json` 在 finalize 前允许通过 `scripts/normalize_graph_review_result.py` 做纯结构层 normalize，但不会放宽语义精度门禁。
+- Step 5 只有在 `status=passed` 时才代表 graph 正式 mapping 已完成；`status=partial` 只允许保留分析性工件，不能被 Step6 当成正式 graph mapping 消费。
 - Step 6 / Step 7 仍要求 graph replay 场景达到 `per_span_forward_code` 精度，不能停留在 replay 入口、phase 级提示或 module call anchor。
+- Step 6 不负责 graph drilldown、graph repair 或 fallback；若 graph mapping 仍不满足正式消费条件，主链会直接失败而不是静默补洞。
 
 ## 推荐阅读顺序
 

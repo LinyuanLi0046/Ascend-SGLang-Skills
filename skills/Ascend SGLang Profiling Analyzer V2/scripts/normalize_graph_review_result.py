@@ -110,18 +110,45 @@ def _normalize_rows_payload(payload: Any, fallback_status: str, row_key_name: st
     return normalized
 
 
+def _normalize_keyed_object_list(payload: Any, key_name: str) -> list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    if isinstance(payload, dict):
+        if isinstance(payload.get("rows"), list):
+            return [item for item in payload.get("rows", []) if isinstance(item, dict)]
+        if isinstance(payload.get("items"), list):
+            return [item for item in payload.get("items", []) if isinstance(item, dict)]
+        rows: list[dict[str, Any]] = []
+        for key, value in payload.items():
+            if key in {"row_count", "status", "summary", "notes"}:
+                continue
+            if isinstance(value, dict):
+                rows.append({key_name: key, **value})
+        return rows
+    return []
+
+
+def _ensure_required_review_keys(payload: dict[str, Any]) -> None:
+    status = str(payload.get("status", "")).strip()
+    if not status:
+        raise ValueError("graph_review_result.json 缺少 status；normalize 不会自动补齐该语义字段。")
+    review_outcome = str(payload.get("review_outcome", "")).strip()
+    if not review_outcome:
+        raise ValueError("graph_review_result.json 缺少 review_outcome；normalize 不会自动补齐该语义字段。")
+    if status == "partial":
+        if payload.get("remaining_candidates_summary") is None:
+            raise ValueError("graph_review_result.json status=partial 时缺少 remaining_candidates_summary；normalize 不会自动补齐。")
+    if status == "passed":
+        if payload.get("decision_templates") is None:
+            raise ValueError("graph_review_result.json status=passed 时缺少 decision_templates；normalize 不会自动补齐。")
+
+
 def normalize_graph_review_payload(payload: dict[str, Any]) -> tuple[dict[str, Any], bool]:
     changed = False
     status = str(payload.get("status", "")).strip()
     promotion = payload.get("artifact_promotion", {})
     if not isinstance(promotion, dict):
         return payload, changed
-
-    for key in ("graph_execution_plan_updates", "graph_forward_context_updates"):
-        updates = promotion.get(key)
-        if isinstance(updates, dict) and status and not str(updates.get("status", "")).strip():
-            updates["status"] = status
-            changed = True
 
     normalized_specs = {
         "graph_span_candidates_payload": "phase",
@@ -138,11 +165,25 @@ def normalize_graph_review_payload(payload: dict[str, Any]) -> tuple[dict[str, A
     if isinstance(payload.get("span_alignment"), list):
         payload["span_alignment"] = _normalize_rows_payload(payload.get("span_alignment"), status or "partial", "span_id")
         changed = True
+
+    for key, key_name in (
+        ("decision_templates", "template_key"),
+        ("unresolved_template_summary", "template_key"),
+        ("resolved_template_summary", "template_key"),
+    ):
+        value = payload.get(key)
+        if value is None:
+            continue
+        normalized_list = _normalize_keyed_object_list(value, key_name)
+        if normalized_list != value:
+            payload[key] = normalized_list
+            changed = True
     return payload, changed
 
 
 def normalize_graph_review_result_file(path: Path) -> bool:
     payload, changed = _load_or_autofix_json(path)
+    _ensure_required_review_keys(payload)
     payload, normalized_changed = normalize_graph_review_payload(payload)
     if changed or normalized_changed:
         path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")

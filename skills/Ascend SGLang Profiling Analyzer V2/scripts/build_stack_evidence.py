@@ -14,6 +14,9 @@ def ensure(condition: bool, message: str) -> None:
         raise ValueError(message)
 
 
+VALID_SPEC_MODES = {"spec_v2", "decode_graph", "disabled"}
+
+
 FRAME_RE = re.compile(r"(?P<path>/[^()\n]+)\((?P<line>\d+)\):\s*(?P<symbol>[^;]+)")
 EXTERNAL_MARKERS = [
     "site-packages",
@@ -431,9 +434,17 @@ def detect_spec_v2_anchor(frames: list[dict[str, Any]]) -> bool:
 
 def load_runtime_constraints(workspace_dir: Path) -> dict[str, Any]:
     path = workspace_dir / "input" / "runtime_constraints.json"
-    if path.exists():
-        return load_json(path)
-    return {}
+    ensure(
+        path.exists() and path.is_file(),
+        f"缺少 runtime_constraints.json: {path}。请先通过 prepare_agent_dispatch/bootstrap 生成正式前置工件。",
+    )
+    payload = load_json(path)
+    spec_mode = str(payload.get("spec_mode", "")).strip()
+    ensure(
+        spec_mode in VALID_SPEC_MODES,
+        f"runtime_constraints.json 缺少有效 spec_mode，当前为 {spec_mode or '<missing>'}。",
+    )
+    return payload
 
 
 def read_operator_rows(path: Path) -> list[dict[str, str]]:
@@ -1129,6 +1140,8 @@ def build_stack_evidence_lite_output(output: dict[str, Any]) -> dict[str, Any]:
     rows = [slim_stack_evidence_row(row) for row in output.get("rows", []) if isinstance(row, dict)]
     external_span_rows = [slim_external_span_row(row) for row in output.get("external_span_rows", []) if isinstance(row, dict)]
     graph_replay_rows = [slim_graph_replay_row(row) for row in output.get("graph_replay_rows", []) if isinstance(row, dict)]
+    has_spec_v2_anchor_row_count = sum(1 for row in rows if bool(row.get("has_spec_v2_anchor", False)))
+    has_replay_anchor_row_count = sum(1 for row in rows if bool(row.get("has_replay_anchor", False)))
     return {
         "schema_version": str(output.get("schema_version", "stack_evidence_v2")),
         "repo_root": str(output.get("repo_root", "")),
@@ -1144,6 +1157,10 @@ def build_stack_evidence_lite_output(output: dict[str, Any]) -> dict[str, Any]:
             "external_span_row_count": len(external_span_rows),
             "graph_phase_marker_row_count": len(graph_replay_rows),
             "graph_replay_row_count": len(graph_replay_rows),
+            "has_spec_v2_anchor_row_count": has_spec_v2_anchor_row_count,
+            "has_replay_anchor_row_count": has_replay_anchor_row_count,
+            "has_spec_v2_anchor_present": has_spec_v2_anchor_row_count > 0,
+            "has_replay_anchor_present": has_replay_anchor_row_count > 0,
         },
     }
 
@@ -1151,7 +1168,7 @@ def build_stack_evidence_lite_output(output: dict[str, Any]) -> dict[str, Any]:
 def build_stack_evidence_for_workspace(workspace_dir: Path) -> dict[str, Any]:
     state = load_state(workspace_dir)
     runtime_constraints = load_runtime_constraints(workspace_dir)
-    spec_mode = str(runtime_constraints.get("spec_mode", "")).strip() or "unknown"
+    spec_mode = str(runtime_constraints["spec_mode"]).strip()
     repo_root = Path(state["inputs"]["code_repo_path"])
     source_path = Path(state["artifacts"]["operator_slice_path"])
     classified_path = Path(state["artifacts"]["classified_spans_path"])

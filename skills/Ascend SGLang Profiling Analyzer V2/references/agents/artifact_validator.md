@@ -11,6 +11,7 @@
 - 你只负责 Step 7 的正式交付物验证。
 - 你检查的是契约、覆盖率、`code_location` 合法性、跨 stream 时序恢复能力，以及正式 graph 场景的精度门禁。
 - 你禁止重新做代码定位决策，禁止修改 mapping 结果。
+- 你必须把 graph 源码行级精度检查下沉到 Step 7：包括识别 `module_call_anchor`、`constructor_line` 与 `.replay()` 入口。
 
 ## 3. 硬约束
 
@@ -31,6 +32,8 @@
 - `artifacts/graph/graph_execution_plan.json`
 - `artifacts/graph/graph_forward_context.json`
 - `artifacts/graph/graph_mapping_targets.json`
+- `artifacts/graph/graph_span_candidates.json`
+- `artifacts/graph/forward_segment_template.json`
 - `artifacts/graph/graph_operator_spans.json`
 - `artifacts/graph/graph_span_alignment.json`
 
@@ -53,11 +56,14 @@
 3. 读 `trace_view.annotated.json` 与 `stream_span_timeline.json`，检查正式交付物与 mapping 是否一致。
    - 对被映射的 trace event，`code_location` 必须存在于 `event.args.code_location`
    - 顶层 `event.code_location` 不得存在
-4. 读取 `graph_execution_plan.json`、`graph_forward_context.json`、`graph_mapping_targets.json`、`graph_operator_spans.json` 与 `graph_span_alignment.json`，检查所有已识别 formal graph targets 的正式 graph 场景是否达到 `per_span_forward_code`，且正式 graph span 记录的结构化粒度字段与 `graph_operator_span_id` 回溯关系满足门禁要求。
-5. 最后运行 `scripts/write_validation_outputs.py --workspace-dir <workspace>` 统一生成 `validation_result.json` 与 `validation_report.md`；该脚本会按主链约定回写 `state.artifacts.validation_result_path` 与 `state.flags.validation_passed`，这属于正式 wrapper 行为，不属于手工改 state。
-6. 若发现 `spec_v2` 或 `decode_graph` 这类正式 graph 场景仍未达到 `per_span_forward_code`，必须如实反映在正式结果里，并输出 `status=failed`；`failed` 是合法正式审计状态，不能为了推进流程伪装成 `passed`。
-7. 主链会继续执行 `mark_step_complete.py --step 7` 与 `check_final_gate.py`，让 final gate 统一给出阻塞结论；你的职责是把失败原因结构化落盘，而不是自行中断编排。
-8. 除正式输出外，不要新增其他结果文件。
+4. 读取 `graph_execution_plan.json`、`graph_forward_context.json`、`graph_mapping_targets.json`、`graph_span_candidates.json`、`forward_segment_template.json`、`graph_operator_spans.json` 与 `graph_span_alignment.json`，检查所有已识别 formal graph targets 的正式 graph 场景是否达到 `per_span_forward_code`，且正式 graph span 记录的结构化粒度字段与 `graph_operator_span_id` 回溯关系满足门禁要求。
+   - `graph_span_candidates.json` 只能用于复核 formal graph target 候选集合与最终对齐结果是否一致
+   - `forward_segment_template.json` 只作为辅助解释层输入，不得覆盖 `graph_span_alignment.json` 的正式结论
+5. 对所有正式 graph `code_location` 继续读取源码行，识别 `module_call_anchor`、`constructor_line` 与 `.replay()` 入口；发现这些情况必须写入 `graph_precision_issues` 并输出 `status=failed`。
+6. 最后运行 `scripts/write_validation_outputs.py --workspace-dir <workspace>` 统一生成 `validation_result.json` 与 `validation_report.md`；该脚本会按主链约定回写 `state.artifacts.validation_result_path` 与 `state.flags.validation_passed`，这属于正式 wrapper 行为，不属于手工改 state。
+7. 若发现 `spec_v2` 或 `decode_graph` 这类正式 graph 场景仍未达到 `per_span_forward_code`，必须如实反映在正式结果里，并输出 `status=failed`；`failed` 是合法正式审计状态，不能为了推进流程伪装成 `passed`。
+8. 主链会继续执行 `mark_step_complete.py --step 7` 与 `check_final_gate.py`，让 final gate 统一给出阻塞结论；你的职责是把失败原因结构化落盘，而不是自行中断编排。
+9. 除正式输出外，不要新增其他结果文件。
 
 ## 7. 主 agent 如何编排你
 
@@ -68,8 +74,9 @@
 
 你返回后，主 agent 会运行：
 
-- `scripts/record_subagent_completion.py --agent-name artifact_validator`
+- `scripts/record_subagent_completion.py --agent-name artifact_validator --task-call-id <task_agent_id>`
 - `scripts/finalize_agent_dispatch.py --agent-name artifact_validator`
+- 至少更新 `findings.md` 或 `progress.md`；若 `state.flags.task_plan_refresh_required=true`，还要同步更新 `task_plan.md`
 - `scripts/mark_step_complete.py --step 7`
 - `scripts/check_final_gate.py`
 

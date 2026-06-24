@@ -43,6 +43,12 @@ def main() -> int:
 
     state["artifacts"]["fix_instructions_path"] = str(fix_path)
     state["flags"]["debug_fix_pending"] = False
+    orchestration = state.setdefault("orchestration", {})
+    orchestration["active_agent"] = ""
+    orchestration["active_dispatch_path"] = ""
+    orchestration["active_dispatch_id"] = ""
+    orchestration["active_completion_marker_path"] = ""
+    orchestration["dispatch_temp_script_baseline"] = []
     if failed_key == "final_gate":
         state["status"] = "awaiting_final_gate"
         state["next_action"] = "run_final_gate"
