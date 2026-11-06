@@ -64,7 +64,7 @@ Refuse to proceed (fail fast with a clear message) until every box passes:
 2. Read `operator_details.csv` / `step_trace_time.csv` from the parsed dir
    (path printed as `Profiling done. Traces are saved to: <path>`).
 3. Emit `bottleneck.json`: top-N operators by share, prefill/decode split,
-   attribution ∈ {compute, comm, launch, memory}.
+   attribution ∈ {compute, comm, launch, mixed}.
 4. Note: full Python-stack visibility requires `--disable-cuda-graph` at launch
    (perf-penalizing — profiling runs only). To profile graph capture itself use
    `--enable-profile-cuda-graph`.
